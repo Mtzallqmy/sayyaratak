@@ -32,7 +32,7 @@ object WorldPainter {
         return WorldData(size, seaX, roads, tints, buildings, palms)
     }
 
-    fun groundPixels(d: FloatArray, res: Int): IntArray {
+    fun groundPixels(d: FloatArray, res: Int, sand: Bitmap? = null, asphalt: Bitmap? = null): IntArray {
         val w = parse(d)
         val bmp = Bitmap.createBitmap(res, res, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -42,11 +42,24 @@ object WorldPainter {
         fun Z(z: Float) = (z + w.size / 2f) * scale
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // base sand, warm gradient
-        p.shader = LinearGradient(0f, 0f, res.toFloat(), res.toFloat(),
-            Color.rgb(214, 183, 128), Color.rgb(196, 158, 100), Shader.TileMode.CLAMP)
-        c.drawRect(0f, 0f, res.toFloat(), res.toFloat(), p)
-        p.shader = null
+        // base: real sand photo texture (CC0 ambientCG) if available, else gradient
+        if (sand != null) {
+            val sh = BitmapShader(sand, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+            val m = Matrix()
+            val tilePx = 26f * scale  // one sand tile ~26 m
+            m.setScale(tilePx / sand.width, tilePx / sand.height)
+            sh.setLocalMatrix(m)
+            p.shader = sh
+            c.drawRect(0f, 0f, res.toFloat(), res.toFloat(), p)
+            p.shader = null
+            // warm it toward the old palette
+            c.drawColor(Color.argb(70, 214, 175, 110))
+        } else {
+            p.shader = LinearGradient(0f, 0f, res.toFloat(), res.toFloat(),
+                Color.rgb(214, 183, 128), Color.rgb(196, 158, 100), Shader.TileMode.CLAMP)
+            c.drawRect(0f, 0f, res.toFloat(), res.toFloat(), p)
+            p.shader = null
+        }
         // sand speckle
         for (k in 0 until 9000) {
             val a = 12 + rnd.nextInt(16)
@@ -105,9 +118,20 @@ object WorldPainter {
             p.color = Color.rgb(178, 168, 150) // sidewalk
             p.strokeWidth = (hw + 3.5f) * scale
             c.drawLine(X(r[0]), Z(r[1]), X(r[2]), Z(r[3]), p)
-            p.color = if (r[5] > 0.5f) Color.rgb(52, 54, 60) else Color.rgb(60, 62, 68)
+            if (asphalt != null) {
+                val ash = BitmapShader(asphalt, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+                val am = Matrix()
+                val atile = 9f * scale  // asphalt tile ~9 m
+                am.setScale(atile / asphalt.width, atile / asphalt.height)
+                ash.setLocalMatrix(am)
+                p.shader = ash
+                p.color = Color.WHITE
+            } else {
+                p.color = if (r[5] > 0.5f) Color.rgb(52, 54, 60) else Color.rgb(60, 62, 68)
+            }
             p.strokeWidth = hw * scale
             c.drawLine(X(r[0]), Z(r[1]), X(r[2]), Z(r[3]), p)
+            p.shader = null
             // center dashes
             p.color = if (r[5] > 0.5f) Color.rgb(240, 200, 70) else Color.rgb(225, 225, 225)
             p.strokeWidth = (if (r[5] > 0.5f) 0.7f else 0.45f) * scale
@@ -130,7 +154,7 @@ object WorldPainter {
     }
 
     // Building facade textures: style 0 modern, 1 sanaa tower, 2 mud (shibam), 3 white (aden)
-    fun buildingPixels(style: Int, res: Int): IntArray {
+    fun buildingPixels(style: Int, res: Int, plaster: Bitmap? = null): IntArray {
         val bmp = Bitmap.createBitmap(res, res, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val rnd = Random((style * 131 + 5).toLong())
@@ -141,7 +165,18 @@ object WorldPainter {
             3 -> Color.rgb(228, 220, 204)
             else -> Color.rgb(186, 172, 148)
         }
-        c.drawColor(base)
+        if (plaster != null) {
+            val sh = BitmapShader(plaster, Shader.TileMode.REPEAT, Shader.TileMode.REPEAT)
+            val m = Matrix()
+            m.setScale(res * 0.5f / plaster.width, res * 0.5f / plaster.height)
+            sh.setLocalMatrix(m)
+            p.shader = sh
+            c.drawRect(0f, 0f, res.toFloat(), res.toFloat(), p)
+            p.shader = null
+            c.drawColor(Color.argb(120, Color.red(base), Color.green(base), Color.blue(base)))
+        } else {
+            c.drawColor(base)
+        }
         // subtle vertical gradient
         p.shader = LinearGradient(0f, 0f, 0f, res.toFloat(),
             Color.argb(30, 255, 255, 255), Color.argb(60, 20, 10, 0), Shader.TileMode.CLAMP)

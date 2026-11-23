@@ -3,6 +3,8 @@ package com.sayyaratak
 import android.app.Activity
 import android.content.Context
 import android.graphics.Typeface
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.os.Handler
@@ -206,10 +208,16 @@ class MainActivity : Activity() {
 
     private fun uploadTextures() {
         val data = NativeBridge.nativeGetWorldData()
-        val ground = WorldPainter.groundPixels(data, 2048)
+        fun assetBmp(name: String): Bitmap? = try {
+            assets.open("tex/" + name).use { BitmapFactory.decodeStream(it) }
+        } catch (t: Throwable) { null }
+        val sandBmp = assetBmp("sand.jpg")
+        val asphaltBmp = assetBmp("asphalt.jpg")
+        val plasterBmp = assetBmp("plaster.jpg")
+        val ground = WorldPainter.groundPixels(data, 2048, sandBmp, asphaltBmp)
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_GROUND, ground, 2048, 2048, true)
         for (s in 0..3) {
-            val px = WorldPainter.buildingPixels(s, 256)
+            val px = WorldPainter.buildingPixels(s, 256, plasterBmp)
             NativeBridge.nativeUploadTexture(NativeBridge.TEX_BLDG_MODERN + s, px, 256, 256, true)
         }
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_PALM, WorldPainter.palmPixels(256), 256, 256, true)
