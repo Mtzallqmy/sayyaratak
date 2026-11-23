@@ -51,6 +51,19 @@ class SettingsUi(val act: Activity, val cb: Callbacks) {
         }
         panel.addView(audioBtn, UiKit.margins(UiKit.vlp(-1, UiKit.dp(act, 44f)), 0, 4 * d, 0, 4 * d))
 
+        addSpacer(panel, 10)
+        val creditsTitle = UiKit.label(act, "المصادر المفتوحة والتراخيص", 14f, UiKit.GOLD)
+        creditsTitle.typeface = UiKit.fontBold
+        panel.addView(creditsTitle)
+        val credits = UiKit.label(act,
+            "موديل السيارة: Mid-Engine Supercar - tevy.dev (CC0 1.0)\n" +
+            "خامات الأرض والطرق والواجهات: ambientCG (CC0)\n" +
+            "الخط: Tajawal - Google Fonts (OFL)\n" +
+            "أدوات التحويل: gltf-transform (Apache-2.0)\n" +
+            "التفاصيل الكاملة في ملف LICENSES.txt داخل اللعبة",
+            11f, Color.argb(190, 255, 255, 255))
+        panel.addView(credits)
+
         panel.addView(UiKit.label(act, "الكاميرا الافتراضية", 14f, Color.argb(220, 255, 255, 255)))
         val cr = UiKit.row(act)
         val cNames = listOf("خلفية", "قريبة", "علوية")

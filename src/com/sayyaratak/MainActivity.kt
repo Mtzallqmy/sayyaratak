@@ -21,6 +21,7 @@ class MainActivity : Activity() {
     private lateinit var root: FrameLayout
     private lateinit var glView: GLSurfaceView
     private lateinit var menu: MenuUi
+    private lateinit var missions: MissionUi
     private lateinit var workshop: WorkshopUi
     private lateinit var settings: SettingsUi
     private lateinit var hud: HudUi
@@ -28,6 +29,9 @@ class MainActivity : Activity() {
     private val state = FloatArray(16)
     private var mode = NativeBridge.MODE_MENU
     private var challengeEnded = false
+    private var missionEnded = false
+    private var missionCity = 0
+    private var missionType = 0
     @Volatile private var frameFailed = false
 
     private val prefs by lazy { getSharedPreferences("sayyaratak", Context.MODE_PRIVATE) }
@@ -112,33 +116,47 @@ class MainActivity : Activity() {
         menu = MenuUi(this, object : MenuUi.Callbacks {
             override fun onStartDrive(district: Int) { startDrive(district) }
             override fun onStartChallenge() { startChallenge() }
+            override fun onOpenMissions() { showMissions() }
             override fun onOpenWorkshop() { showWorkshop() }
             override fun onOpenSettings() { showSettings() }
         })
         menu.build(root)
 
+        missions = MissionUi(this, object : MissionUi.Callbacks {
+            override fun onStartMission(city: Int, type: Int) { startMission(city, type) }
+            override fun onCloseMissions() { showMenu() }
+        })
+        missions.build(root)
+
         workshop = WorkshopUi(this, object : WorkshopUi.Callbacks {
             override fun onPaint(r: Float, g: Float, b: Float) {
+                val idx = paintIndex(r, g, b)
+                if (idx >= 4 && !gate("paint$idx")) return@onPaint
                 prefs.edit().putFloat("pr", r).putFloat("pg", g).putFloat("pb", b).apply()
                 glView.queueEvent { NativeBridge.nativeSetPaint(r, g, b) }
             }
             override fun onWheels(style: Int) {
+                if (style > 0 && !gate("wheels$style")) return@onWheels
                 prefs.edit().putInt("wheels", style).apply()
                 glView.queueEvent { NativeBridge.nativeSetWheels(style) }
             }
             override fun onSpoiler(on: Boolean) {
+                if (on && !gate("spoiler")) return@onSpoiler
                 prefs.edit().putBoolean("spoiler", on).apply()
                 glView.queueEvent { NativeBridge.nativeSetSpoiler(on) }
             }
             override fun onNeon(on: Boolean) {
+                if (on && !gate("neon")) return@onNeon
                 prefs.edit().putBoolean("neon", on).apply()
                 glView.queueEvent { NativeBridge.nativeSetNeon(on) }
             }
             override fun onTint(on: Boolean) {
+                if (on && !gate("tint")) return@onTint
                 prefs.edit().putBoolean("tint", on).apply()
                 glView.queueEvent { NativeBridge.nativeSetTint(on) }
             }
             override fun onEngine(p: Int) {
+                if (p != 1 && !gate("engine$p")) return@onEngine
                 prefs.edit().putInt("engine", p).apply()
                 glView.queueEvent { NativeBridge.nativeSetEngineProfile(p) }
             }
@@ -229,8 +247,50 @@ class MainActivity : Activity() {
         glView.queueEvent { NativeBridge.nativeSetMode(m) }
     }
 
+    private fun gate(item: String): Boolean {
+        val price = Progression.PRICES[item] ?: 0
+        if (price == 0 || Progression.unlocked(this, item)) return true
+        if (Progression.buy(this, item, price)) {
+            android.widget.Toast.makeText(this, "تم الشراء! -$price رصيد", android.widget.Toast.LENGTH_SHORT).show()
+            return true
+        }
+        android.widget.Toast.makeText(this, "رصيدك ما يكفي (تحتاج $price - أكمل مهاماً)", android.widget.Toast.LENGTH_LONG).show()
+        workshop.syncState(prefs.getBoolean("spoiler", true), prefs.getBoolean("neon", false), prefs.getBoolean("tint", true))
+        return false
+    }
+
+    private fun paintIndex(r: Float, g: Float, b: Float): Int {
+        val paints = arrayOf(
+            floatArrayOf(0.62f,0.05f,0.06f), floatArrayOf(0.08f,0.14f,0.38f),
+            floatArrayOf(0.92f,0.90f,0.86f), floatArrayOf(0.06f,0.06f,0.08f),
+            floatArrayOf(0.80f,0.62f,0.22f), floatArrayOf(0.05f,0.38f,0.20f),
+            floatArrayOf(0.90f,0.42f,0.08f), floatArrayOf(0.35f,0.14f,0.50f))
+        for (i in paints.indices) {
+            val p = paints[i]
+            if (kotlin.math.abs(p[0]-r) < 0.02f && kotlin.math.abs(p[1]-g) < 0.02f && kotlin.math.abs(p[2]-b) < 0.02f) return i
+        }
+        return 0
+    }
+
+    private fun startMission(city: Int, type: Int) {
+        UiKit.hide(menu.panel); UiKit.hide(settings.panel); UiKit.hide(workshop.panel); UiKit.hide(missions.panel)
+        UiKit.show(hud.panel)
+        hud.resetInput()
+        missionEnded = false
+        missionCity = city; missionType = type
+        hud.timerText.visibility = View.VISIBLE
+        mode = NativeBridge.MODE_MISSION
+        glView.queueEvent { NativeBridge.nativeStartMission(city, type) }
+    }
+
+    private fun showMissions() {
+        UiKit.hide(menu.panel)
+        missions.refresh()
+        UiKit.show(missions.panel)
+    }
+
     private fun startDrive(district: Int) {
-        UiKit.hide(menu.panel); UiKit.hide(settings.panel); UiKit.hide(workshop.panel)
+        UiKit.hide(menu.panel); UiKit.hide(settings.panel); UiKit.hide(workshop.panel); UiKit.hide(missions.panel)
         UiKit.show(hud.panel)
         hud.resetInput()
         challengeEnded = false
@@ -246,7 +306,8 @@ class MainActivity : Activity() {
     }
 
     private fun showMenu() {
-        UiKit.hide(hud.panel); UiKit.hide(settings.panel); UiKit.hide(workshop.panel)
+        if (mode == NativeBridge.MODE_MISSION) glView.queueEvent { NativeBridge.nativeAbortMission() }
+        UiKit.hide(hud.panel); UiKit.hide(settings.panel); UiKit.hide(workshop.panel); UiKit.hide(missions.panel)
         UiKit.show(menu.panel)
         hud.resetInput()
         refreshBest()
@@ -264,12 +325,42 @@ class MainActivity : Activity() {
 
     private fun refreshBest() {
         menu.setBest(prefs.getInt("stars", 0), prefs.getInt("best", 0), prefs.getInt("cbest", 0))
+        menu.setProgress(Progression.balance(this), Progression.level(this))
     }
 
     private val hudTick = object : Runnable {
         override fun run() {
             try {
             NativeBridge.nativeGetState(state)
+            if (mode == NativeBridge.MODE_MISSION) {
+                hud.speedo.kmh = state[NativeBridge.ST_SPEED]
+                hud.speedo.invalidate()
+                hud.onDistrictChanged(state[NativeBridge.ST_DISTRICT].toInt())
+                hud.onDrift(state[NativeBridge.ST_DRIFT] > 0.5f)
+                hud.setDashboard(state[NativeBridge.ST_CAMERA] == 1f)
+                val packed = state[NativeBridge.ST_MISSION_PROG].toInt()
+                val prog = packed / 10000; val goal = packed % 10000
+                val spacked = state[NativeBridge.ST_MISSION_STATE].toInt()
+                val mstate = spacked / 100000; val reward = spacked % 100000
+                val mt = state[NativeBridge.ST_MISSION_TYPE].toInt()
+                val progLabel = when (mt) { 1 -> "الحلقات"; 2 -> "الوصول"; else -> "النقاط" }
+                hud.scoreText.text = "${Progression.MISSION_NAMES[mt]}: $progLabel $prog/$goal"
+                hud.timerText.text = "الوقت: ${state[NativeBridge.ST_MISSION_TIME].toInt()}"
+                if ((mstate == 2 || mstate == 3) && !missionEnded) {
+                    missionEnded = true
+                    if (mstate == 2) {
+                        val best = if (mt == 3) prog else (state[NativeBridge.ST_MISSION_TIME].toInt())
+                        val paid = Progression.completeMission(this@MainActivity, missionCity, missionType, reward, best)
+                        hud.banner.text = "مهمة مكتملة! +$paid رصيد"
+                    } else {
+                        hud.banner.text = "انتهى الوقت - حاول مرة أخرى"
+                    }
+                    hud.banner.animate().cancel()
+                    hud.banner.alpha = 1f
+                    hud.banner.animate().alpha(0f).setStartDelay(2800).setDuration(900).start()
+                    mode = NativeBridge.MODE_FREE
+                }
+            }
             if (mode == NativeBridge.MODE_FREE || mode == NativeBridge.MODE_CHALLENGE) {
                 hud.speedo.kmh = state[NativeBridge.ST_SPEED]
                 hud.speedo.invalidate()
@@ -281,7 +372,11 @@ class MainActivity : Activity() {
                 val best = prefs.getInt("best", 0)
                 if (state[NativeBridge.ST_SCORE] > best) prefs.edit().putInt("best", state[NativeBridge.ST_SCORE].toInt()).apply()
                 val stars = prefs.getInt("stars", 0)
-                if (state[NativeBridge.ST_STARS] > stars) prefs.edit().putInt("stars", state[NativeBridge.ST_STARS].toInt()).apply()
+                if (state[NativeBridge.ST_STARS] > stars) {
+                    val gained = state[NativeBridge.ST_STARS].toInt() - stars
+                    prefs.edit().putInt("stars", state[NativeBridge.ST_STARS].toInt()).apply()
+                    Progression.addEarning(this@MainActivity, 25 * gained)
+                }
                 if (mode == NativeBridge.MODE_CHALLENGE) {
                     val tl = state[NativeBridge.ST_TIMELEFT]
                     hud.timerText.text = "الوقت: ${tl.toInt()}   •   الحلقات: ${state[NativeBridge.ST_HITS].toInt()}"
@@ -290,6 +385,7 @@ class MainActivity : Activity() {
                         val hits = state[NativeBridge.ST_HITS].toInt()
                         val cb = prefs.getInt("cbest", 0)
                         if (hits > cb) prefs.edit().putInt("cbest", hits).apply()
+                        if (hits > 0) Progression.addEarning(this@MainActivity, hits * 20)
                         hud.banner.text = "انتهى التحدي! حلقات: $hits"
                         hud.banner.animate().cancel()
                         hud.banner.alpha = 1f

@@ -55,6 +55,10 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeGetState(JNIEnv* e
     s[9] = (float)G.stars;
     s[10] = 0;
     s[11] = G.world.onRoad(G.pos.x, G.pos.z, 0.5f) ? 0.f : 1.f;
+    s[12] = (float)G.missionType;
+    s[13] = G.mode == 5 ? G.missionTime : 0;
+    s[14] = (float)G.missionProgress * 10000.f + (float)G.missionGoal; // packed
+    s[15] = (float)G.missionState * 100000.f + (float)G.missionReward; // packed
     env->SetFloatArrayRegion(out, 0, 16, s);
 }
 
@@ -146,6 +150,26 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeLoadModel(JNIEnv* 
         env->GetByteArrayRegion(lod, 0, n, (jbyte*)buf.data());
         G.parkedModel.load(buf.data(), buf.size());
     }
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeStartMission(JNIEnv*, jclass, jint city, jint type) {
+    G.mode = 5;
+    G.missionCity = city; G.missionType = type; G.missionState = 1;
+    G.missionProgress = 0; G.missionDriftScore = 0; G.missionReward = 0;
+    V3 sp = G.world.spawnFor(city);
+    G.pos = sp; G.vx = G.vz = 0; G.heading = 0;
+    if (type == 1) { G.missionGoal = 8; G.missionTime = 120; G.missionReward = 300;
+        G.ringIdx = (city * 13 + 5) % (int)G.world.intersections.size(); }
+    else if (type == 2) { G.missionGoal = 1; G.missionReward = 250;
+        int other = ((city + 2) % 5) + 1;
+        G.deliveryTarget = v3(G.world.districts[other].cx, 1.6f, G.world.districts[other].cz);
+        float dx = G.deliveryTarget.x - sp.x, dz = G.deliveryTarget.z - sp.z;
+        G.missionTime = sqrtf(dx*dx + dz*dz) / 16.f + 25.f; }
+    else { G.missionGoal = 400; G.missionTime = 75; G.missionReward = 350; }
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeAbortMission(JNIEnv*, jclass) {
+    G.missionState = 0; G.missionType = 0; G.mode = 2;
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativePauseAudio(JNIEnv*, jclass) { audioStop(); }

@@ -9,6 +9,7 @@ struct TintRect { float x, z, w, h, style; };
 struct Bldg { float x, z, w, d, h; int tex; };
 struct Collider { float x, z, hw, hd; };
 struct Palm { float x, z, s; };
+struct TrafficCar { int seg, dir, colorIdx; float t, speed, cruise, x, z, heading, wheelSpin; };
 struct Parked { float x, z, heading; int colorIdx; };
 struct District { float cx, cz; int style; }; // style: 1 taiz, 2 sanaa, 3 ibb, 4 aden, 5 hadramawt
 
@@ -18,6 +19,7 @@ struct World {
     std::vector<Bldg> bldgs;
     std::vector<Collider> colliders;
     std::vector<Palm> palms;
+    std::vector<TrafficCar> traffic;
     std::vector<Parked> parked;
     std::vector<V3> stars;
     std::vector<V3> intersections;
@@ -100,6 +102,73 @@ struct World {
         }
         // stars on intersections
         for (auto& it : intersections) if (frand() < 0.65f) stars.push_back(v3(it.x, 1.6f, it.z));
+        // moving traffic
+        for (int k = 0; k < 20 && !roads.empty(); k++) {
+            int seg = (int)(frand() * roads.size()) % (int)roads.size();
+            RoadSeg& r = roads[seg];
+            float dx = r.x2 - r.x1, dz = r.z2 - r.z1;
+            float len = sqrtf(dx * dx + dz * dz);
+            if (len < 60) { k--; if (k < -40) break; continue; }
+            TrafficCar tc;
+            tc.seg = seg; tc.dir = frand() < 0.5f ? 1 : -1;
+            tc.t = frand(); tc.cruise = 7.f + frand() * 7.f; tc.speed = tc.cruise;
+            tc.colorIdx = (int)(frand() * 6);
+            tc.x = tc.z = tc.heading = tc.wheelSpin = 0;
+            traffic.push_back(tc);
+        }
+    }
+
+    // advance traffic one step; px/pz = player position for braking
+    void updateTraffic(float dt, float px, float pz) {
+        for (auto& tc : traffic) {
+            RoadSeg& r = roads[tc.seg];
+            float dx = r.x2 - r.x1, dz = r.z2 - r.z1;
+            float len = sqrtf(dx * dx + dz * dz);
+            if (len < 1) continue;
+            float ux = dx / len, uz = dz / len;
+            // brake when the player is close ahead
+            float fx = ux * tc.dir, fz = uz * tc.dir;
+            float pdx = px - tc.x, pdz = pz - tc.z;
+            float pd = sqrtf(pdx * pdx + pdz * pdz);
+            float target = tc.cruise;
+            if (pd < 14.f && (pdx * fx + pdz * fz) > 0) target = pd < 7.f ? 0.f : tc.cruise * 0.3f;
+            tc.speed += (target - tc.speed) * fminf(1.f, dt * 2.2f);
+            tc.t += tc.dir * tc.speed * dt / len;
+            if (tc.t > 1.f || tc.t < 0.f) {
+                float ex = tc.t > 1.f ? r.x2 : r.x1, ez = tc.t > 1.f ? r.z2 : r.z1;
+                int best = -1; float bestScore = 1e9f;
+                for (int i = 0; i < (int)roads.size(); i++) {
+                    if (i == tc.seg) continue;
+                    RoadSeg& o = roads[i];
+                    float ddx = o.x2 - o.x1, ddz = o.z2 - o.z1;
+                    float ol = sqrtf(ddx * ddx + ddz * ddz);
+                    if (ol < 30) continue;
+                    for (int e = 0; e < 2; e++) {
+                        float ox = e ? o.x2 : o.x1, oz = e ? o.z2 : o.z1;
+                        float dd = (ox - ex) * (ox - ex) + (oz - ez) * (oz - ez);
+                        if (dd < 9.f) {
+                            // prefer continuing roughly straight
+                            float dot = (ddx / ol) * fx * (e ? 1 : -1) + (ddz / ol) * fz * (e ? 1 : -1);
+                            float score = -dot + frand() * 0.35f;
+                            if (score < bestScore) { bestScore = score; best = i * 2 + e; }
+                        }
+                    }
+                }
+                if (best >= 0) {
+                    tc.seg = best / 2; tc.t = (best % 2) ? 1.f : 0.f; tc.dir = 1;
+                } else {
+                    tc.dir = -tc.dir;
+                    tc.t = tc.t > 1.f ? 1.f : 0.f;
+                }
+            } else {
+                // lane offset: right-hand side relative to travel direction
+                float lane = 3.1f * tc.dir;
+                tc.x = r.x1 + dx * tc.t - uz * lane;
+                tc.z = r.z1 + dz * tc.t + ux * lane;
+                tc.heading = atan2f(fx, fz);
+                tc.wheelSpin += tc.speed * dt / 0.34f;
+            }
+        }
     }
 
     void genDistrictBuildings(int di) {

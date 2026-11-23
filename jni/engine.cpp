@@ -91,6 +91,21 @@ void stepPhysics(float dt) {
 
     G.wheelSpin += speed * dt / 0.34f;
 
+    // traffic update + player collision
+    G.world.updateTraffic(dt, G.pos.x, G.pos.z);
+    for (auto& tc : G.world.traffic) {
+        float dx = G.pos.x - tc.x, dz = G.pos.z - tc.z;
+        float d2 = dx * dx + dz * dz;
+        if (d2 < 4.6f && d2 > 0.0001f) {
+            float d = sqrtf(d2);
+            float push = (2.15f - d) / d;
+            G.pos.x += dx * push; G.pos.z += dz * push;
+            float vn = G.vx * (dx / d) + G.vz * (dz / d);
+            if (vn < 0) { G.vx -= vn * 1.4f * (dx / d); G.vz -= vn * 1.4f * (dz / d); }
+            if (-vn > 3.5f) { G.shake = fminf(1.f, -vn * 0.1f); audioOneshot(2); }
+        }
+    }
+
     // visual weight transfer
     {
         float acc = dt > 0 ? (speed - G.prevSpeed) / dt : 0.f;
@@ -108,6 +123,8 @@ void stepPhysics(float dt) {
     G.driftActive = drifting ? 1.f : 0.f;
     if (drifting) {
         G.driftAccum += slip * fabsf(speed) * dt * 1.4f;
+        if (G.mode == 5 && G.missionType == 3 && G.missionState == 1)
+            G.missionDriftScore += slip * fabsf(speed) * dt * 1.4f;
         if (G.driftAccum > 25.f) { G.score += 25; G.driftAccum = 0; }
         spawnDust(2, 0.75f, 0.68f, 0.55f);
     }
@@ -126,6 +143,31 @@ void stepPhysics(float dt) {
     }
 
     // challenge
+    if (G.mode == 5 && G.missionState == 1) {
+        G.missionTime -= dt;
+        if (G.missionTime <= 0) { G.missionTime = 0; G.missionState = 3; }
+        if (G.missionType == 1 && G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size()) {
+            V3 r = G.world.intersections[G.ringIdx];
+            float dx = G.pos.x - r.x, dz = G.pos.z - r.z;
+            if (dx*dx + dz*dz < 30.f) {
+                G.missionProgress++;
+                audioOneshot(1);
+                G.ringIdx = (G.ringIdx * 7 + 3) % (int)G.world.intersections.size();
+                if (G.missionProgress >= G.missionGoal) G.missionState = 2;
+            }
+        } else if (G.missionType == 2) {
+            float dx = G.pos.x - G.deliveryTarget.x, dz = G.pos.z - G.deliveryTarget.z;
+            if (dx*dx + dz*dz < 90.f) { G.missionState = 2; audioOneshot(1); }
+        } else if (G.missionType == 3) {
+            G.missionProgress = (int)G.missionDriftScore;
+            if (G.missionProgress >= G.missionGoal) G.missionState = 2;
+        }
+        if (G.missionState == 2) {
+            int bonus = G.missionType == 3 ? G.missionProgress / 10 : (int)(G.missionTime * 2);
+            G.missionReward += bonus;
+            G.earnedTotal += G.missionReward;
+        }
+    }
     if (G.mode == 3) {
         G.challengeTime -= dt;
         if (G.challengeTime <= 0) G.challengeTime = 0;
@@ -310,6 +352,19 @@ void drawFrame(float dt) {
                        M4::rotY(G.time * 1.5f + i));
         drawMesh(G.starsMesh, m, M4::mul(vp, m), 1,1,1,1, 0, 0, 0.55f, 0.5f, 32, 0, 0, 0);
     }
+    // mission ring / delivery beacon
+    if (G.mode == 5 && G.missionState == 1) {
+        V3 r = G.missionType == 2 ? G.deliveryTarget
+             : (G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size() ? G.world.intersections[G.ringIdx] : v3(0,-99,0));
+        if (r.y > -50) {
+            M4 rm = M4::mul(M4::translate(r.x, 3.2f + sinf(G.time * 2.5f) * 0.3f, r.z), M4::rotY(G.time));
+            drawMesh(G.ringMesh, rm, M4::mul(vp, rm), 0.4f,0.9f,1.f,1, 0, 0, 1.0f, 0.6f, 48, 0, 0, 0);
+            M4 bm = M4::translate(r.x, 0, r.z);
+            glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(false);
+            drawMesh(G.beaconMesh, bm, M4::mul(vp, bm), 0.4f,0.9f,1.f,1, 0, 0, 0.9f, 0, 1, 0, 0, 0);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(true); glDisable(GL_BLEND);
+        }
+    }
     // challenge ring + beacon
     if (G.mode == 3 && G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size()) {
         V3 r = G.world.intersections[G.ringIdx];
@@ -340,6 +395,30 @@ void drawFrame(float dt) {
             glEnable(GL_BLEND); glDepthMask(false);
             drawMesh(G.parkedGlass, m, pmvp, 1,1,1,0.9f, 0, 0, 0, 0.9f, 90, 0, 0, 0.5f);
             glDepthMask(true); glDisable(GL_BLEND);
+        }
+    }
+
+    // moving traffic
+    if (G.parkedModel.glReady) {
+        for (auto& tc : G.world.traffic) {
+            M4 m = M4::mul(M4::translate(tc.x, 0, tc.z), M4::rotY(tc.heading));
+            M4 pmvp = M4::mul(vp, m);
+            const float* pc3 = PAINTS[tc.colorIdx];
+            for (int pi = 0; pi < G.parkedModel.partCount; pi++) {
+                CarPart& P = G.parkedModel.parts[pi];
+                M4 lm = m;
+                if (P.name.rfind("wheel_", 0) == 0) {
+                    lm = M4::mul(m, M4::mul(M4::translate(P.pivot.x, P.pivot.y, P.pivot.z),
+                         M4::mul(M4::rotX(tc.wheelSpin), M4::translate(-P.pivot.x, -P.pivot.y, -P.pivot.z))));
+                    pmvp = M4::mul(vp, lm);
+                }
+                if (P.flags & 4) drawMesh(P.gpu, lm, pmvp, pc3[0],pc3[1],pc3[2],1, 0,0,0, 0.6f, 48, 0, 0, 0.4f);
+                else if (P.flags & 2) drawMesh(P.gpu, lm, pmvp, 1,1,1,1, 0,0,0.4f, 0.5f, 48, 0, 0, 0.2f);
+                else if (P.flags & 1) { glEnable(GL_BLEND); glDepthMask(false);
+                    drawMesh(P.gpu, lm, pmvp, 1,1,1,0.85f, 0,0,0, 0.9f, 90, 0, 0, 0.5f);
+                    glDepthMask(true); glDisable(GL_BLEND); }
+                else drawMesh(P.gpu, lm, pmvp, 1,1,1,1, 0,0,0, 0.5f, 48, 0, 0, 0.35f);
+            }
         }
     }
 

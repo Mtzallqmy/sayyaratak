@@ -1,0 +1,22 @@
+سيارتك (Sayyaratak) - مصادر مفتوحة وتراخيص / Open-source credits
+================================================================
+
+1) 3D car model: "Mid-Engine Supercar" by tevy.dev
+   License: CC0 1.0 (public domain) - https://creativecommons.org/publicdomain/zero/1.0/
+   Source: https://tevy.dev/models/supercar
+   Converted offline (glTF GLB -> engine mesh format) with gltf-transform.
+
+2) Textures (sand, asphalt, plaster, rock): ambientCG
+   License: CC0 1.0 - https://ambientcg.com/
+   Assets: Ground054, Road012A, Plaster007, Rock035 (1K, downscaled to 512px)
+
+3) Font: Tajawal (Arabic UI font) by Boutros Fonts / Google Fonts
+   License: SIL Open Font License 1.1 - https://fonts.google.com/specimen/Tajawal
+
+4) gltf-transform CLI (build-time converter only, not shipped)
+   License: Apache-2.0 - https://gltf-transform.dev
+
+5) glTF 2.0 format: Khronos Group (format specification)
+
+Everything else (engine, physics, renderer, audio synth, UI, city layouts) is
+original code written for this game. All bundled content is offline.

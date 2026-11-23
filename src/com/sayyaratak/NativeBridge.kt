@@ -27,6 +27,8 @@ object NativeBridge {
     external fun nativeGetGlError(): String
     external fun nativeGetGlInfo(): String
     external fun nativeLoadModel(hero: ByteArray, lod: ByteArray)
+    external fun nativeStartMission(city: Int, type: Int)
+    external fun nativeAbortMission()
     external fun nativePauseAudio()
     external fun nativeResumeAudio()
 
@@ -34,6 +36,7 @@ object NativeBridge {
     const val MODE_WORKSHOP = 1
     const val MODE_FREE = 2
     const val MODE_CHALLENGE = 3
+    const val MODE_MISSION = 5
 
     // state array indices
     const val ST_SPEED = 0
@@ -51,6 +54,10 @@ object NativeBridge {
     const val ST_CHALLENGE_BEST = 12
 
     // texture slots
+    const val ST_MISSION_TYPE = 12
+    const val ST_MISSION_TIME = 13
+    const val ST_MISSION_PROG = 14
+    const val ST_MISSION_STATE = 15
     const val TEX_GROUND = 0
     const val TEX_BLDG_MODERN = 1
     const val TEX_BLDG_SANAA = 2

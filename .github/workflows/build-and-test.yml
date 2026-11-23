@@ -25,6 +25,11 @@ jobs:
           echo "KOTLINC=$HOME/kotlin/kotlinc/bin/kotlinc" >> $GITHUB_ENV
       - name: Build APKs (arm64 release + x86_64 emulator)
         run: |
+          # throwaway CI signing key (never a real key in the repo)
+          mkdir -p build
+          keytool -genkeypair -alias test -keyalg RSA -keysize 2048 -validity 365 \
+            -keystore build/testkey.jks -storepass sayyaratak123 -keypass sayyaratak123 \
+            -dname "CN=CI Test, OU=CI, O=CI, C=YE"
           ./build.sh
           # extra emulator ABI
           NDK=$ANDROID_HOME/ndk/26.1.10909125

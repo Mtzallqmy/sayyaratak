@@ -55,6 +55,12 @@ struct Game {
     float challengeTime = 0;
     int challengeHits = 0;
     int ringIdx = -1;
+    // missions (mode 5): 1 rings, 2 delivery, 3 drift
+    int missionType = 0, missionCity = 0, missionGoal = 0, missionProgress = 0;
+    int missionReward = 0, missionState = 0; // 0 none 1 running 2 done 3 failed
+    float missionTime = 0, missionDriftScore = 0;
+    V3 deliveryTarget = {0,0,0};
+    float earnedTotal = 0; // session earnings for HUD
     float driftActive = 0;
     float driftAccum = 0;
     float fps = 60;

@@ -11,12 +11,14 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
     interface Callbacks {
         fun onStartDrive(district: Int)
         fun onStartChallenge()
+        fun onOpenMissions()
         fun onOpenWorkshop()
         fun onOpenSettings()
     }
 
     lateinit var panel: LinearLayout
     lateinit var bestText: TextView
+    lateinit var statsText: TextView
 
     fun build(root: android.widget.FrameLayout) {
         val d = UiKit.dp(act, 1f)
@@ -33,18 +35,22 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         panel.addView(sub)
 
         bestText = UiKit.label(act, "", 13f, Color.argb(190, 255, 230, 160))
-        bestText.setPadding(0, 0, 0, 12 * d)
         panel.addView(bestText)
+        statsText = UiKit.label(act, "", 13f, Color.argb(220, 170, 220, 255))
+        statsText.setPadding(0, 0, 0, 12 * d)
+        panel.addView(statsText)
 
         val b1 = UiKit.btn(act, "قيادة حرة", 17f, true)
         val b2 = UiKit.btn(act, "تحدي السرعة", 17f)
+        val b5 = UiKit.btn(act, "المهام", 17f)
         val b3 = UiKit.btn(act, "الورشة", 17f)
         val b4 = UiKit.btn(act, "الإعدادات", 17f)
+        b5.setOnClickListener { cb.onOpenMissions() }
         b1.setOnClickListener { cb.onStartDrive(-1) }
         b2.setOnClickListener { cb.onStartChallenge() }
         b3.setOnClickListener { cb.onOpenWorkshop() }
         b4.setOnClickListener { cb.onOpenSettings() }
-        for (b in listOf(b1, b2, b3, b4)) {
+        for (b in listOf(b1, b2, b5, b3, b4)) {
             panel.addView(b, UiKit.margins(UiKit.vlp(UiKit.dp(act, 230f), UiKit.dp(act, 48f)), 0, 6 * d, 0, 6 * d))
         }
 
@@ -64,6 +70,12 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
 
         val lp = UiKit.lp(-2, -2, Gravity.CENTER)
         root.addView(panel, lp)
+    }
+
+    fun setProgress(balance: Int, level: Int) {
+        if (::statsText.isInitialized) {
+            statsText.text = "المستوى $level   •   الرصيد: $balance"
+        }
     }
 
     fun setBest(stars: Int, best: Int, challengeBest: Int) {
