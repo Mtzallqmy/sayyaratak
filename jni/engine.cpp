@@ -357,7 +357,8 @@ void drawFrame(float dt) {
         V3 r = G.missionType == 2 ? G.deliveryTarget
              : (G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size() ? G.world.intersections[G.ringIdx] : v3(0,-99,0));
         if (r.y > -50) {
-            M4 rm = M4::mul(M4::translate(r.x, 3.2f + sinf(G.time * 2.5f) * 0.3f, r.z), M4::rotY(G.time));
+            M4 rm = M4::mul(M4::translate(r.x, 3.4f + sinf(G.time * 2.5f) * 0.3f, r.z),
+                            M4::mul(M4::rotY(G.time * 0.5f), M4::rotX(1.5708f)));
             drawMesh(G.ringMesh, rm, M4::mul(vp, rm), 0.4f,0.9f,1.f,1, 0, 0, 1.0f, 0.6f, 48, 0, 0, 0);
             M4 bm = M4::translate(r.x, 0, r.z);
             glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(false);
@@ -368,7 +369,8 @@ void drawFrame(float dt) {
     // challenge ring + beacon
     if (G.mode == 3 && G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size()) {
         V3 r = G.world.intersections[G.ringIdx];
-        M4 rm = M4::mul(M4::translate(r.x, 3.2f + sinf(G.time * 2.5f) * 0.3f, r.z), M4::rotY(G.time));
+        M4 rm = M4::mul(M4::translate(r.x, 3.4f + sinf(G.time * 2.5f) * 0.3f, r.z),
+                        M4::mul(M4::rotY(G.time * 0.5f), M4::rotX(1.5708f)));
         drawMesh(G.ringMesh, rm, M4::mul(vp, rm), 1,1,1,1, 0, 0, 1.0f, 0.6f, 48, 0, 0, 0);
         M4 bm = M4::translate(r.x, 0, r.z);
         glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(false);

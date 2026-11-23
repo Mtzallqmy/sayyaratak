@@ -148,6 +148,24 @@ int main(int argc, char** argv) {
         for (int k = 0; k < 25; k++) drawFrame(0.016f);
         snap(names[di]);
     }
+    // mission mode: rings mission in Taiz
+    G.mode = 5; G.missionType = 1; G.missionCity = 1; G.missionGoal = 5; G.missionProgress = 1;
+    G.missionState = 1; G.missionTime = 58; G.ringIdx = 1;
+    // park the camera 25m behind ring #1, facing it
+    V3 ring = G.world.intersections[1];
+    G.pos = v3(ring.x - 25.f, ring.y, ring.z); G.vx = G.vz = 0;
+    G.heading = 1.5708f; // fwd=(sin h,cos h)=(1,0): face +x toward ring
+    G.inThrottle = 0;
+    // snap the chase camera behind the car (lerp would need many frames)
+    G.camPos = v3(G.pos.x - 7.6f, 3.1f, G.pos.z);
+    printf("mission dbg: mode=%d state=%d type=%d ringIdx=%d nintersections=%d ringmesh_v=%d\n",
+           G.mode, G.missionState, G.missionType, G.ringIdx,
+           (int)G.world.intersections.size(), G.ringMesh.count);
+    for (int k = 0; k < 5; k++) drawFrame(0.016f);
+    printf("after frames: mode=%d state=%d ring=(%.1f,%.1f,%.1f) cam=(%.1f,%.1f)\n",
+           G.mode, G.missionState, ring.x, ring.y, ring.z, G.pos.x, G.pos.z);
+    snap("mission");
+    G.inThrottle = 0; G.mode = 2; G.missionState = 0;
     printf("done. speed=%.1f kmh pos=%.1f,%.1f\n", fabsf(G.vx)*3.6f, G.pos.x, G.pos.z);
     return 0;
 }
