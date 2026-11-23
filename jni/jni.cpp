@@ -1,5 +1,6 @@
 // Sayyaratak JNI bridge.
 #include <jni.h>
+#include <android/log.h>
 #include <cstring>
 #include "game.h"
 
@@ -138,10 +139,11 @@ JNIEXPORT jfloatArray JNICALL Java_com_sayyaratak_NativeBridge_nativeGetWorldDat
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeUploadTexture(JNIEnv* env, jclass, jint slot, jintArray px, jint w, jint h, jboolean mip) {
-    if (slot < 0 || slot >= 8) return;
+    if (slot < 0 || slot >= 12) { __android_log_print(ANDROID_LOG_WARN, "sayya", "tex upload rejected: slot %d", slot); return; }
     jint* data = env->GetIntArrayElements(px, nullptr);
     uploadTex(slot, (const int*)data, w, h, mip);
     env->ReleaseIntArrayElements(px, data, JNI_ABORT);
+    __android_log_print(ANDROID_LOG_INFO, "sayya", "tex upload slot %d %dx%d mip=%d glerr=%d id=%u", slot, w, h, (int)mip, glGetError(), texIds()[slot]);
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativePreviewRev(JNIEnv*, jclass) {

@@ -382,7 +382,7 @@ void drawFrame(float dt) {
     // sky (no fog, emissive, no depth write)
     glDepthMask(false);
     M4 skyM = M4::translate(cam.x, 0, cam.z);
-    drawMesh(G.sky, skyM, M4::mul(vp, skyM), 1,1,1,1, 8, 1, 0.9f, 0, 1, 0, 1, 0);
+    drawMesh(G.sky, skyM, M4::mul(vp, skyM), 1,1,1,1, 8, texIds()[8] ? 1.f : 0.f, 0.9f, 0, 1, 0, 1, 0);
     // sun billboard
     V3 sd = vnorm(SUN);
     M4 sunM = M4::mul(M4::translate(cam.x + sd.x * 2600, cam.y + sd.y * 2600, cam.z + sd.z * 2600),

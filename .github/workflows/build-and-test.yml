@@ -76,6 +76,9 @@ jobs:
           script: |
             adb install -r /tmp/Sayyaratak-x86.apk
             adb shell settings put global window_animation_scale 0
+            # suppress the system immersive-mode confirmation dialog entirely
+            adb shell settings put global immersive_mode_confirmations confirmed
+            adb logcat -c
             adb shell monkey -p com.sayyaratak -c android.intent.category.LAUNCHER 1
             sleep 12
             mkdir -p shots
@@ -98,5 +101,6 @@ jobs:
             adb shell screencap -p /sdcard/game2.png && adb pull /sdcard/game2.png shots/game2.png
             adb shell input swipe $((W*88/100)) $((H*80/100)) $((W*88/100)) $((H*80/100)) 4000
             adb shell screencap -p /sdcard/game3.png && adb pull /sdcard/game3.png shots/game3.png
+            adb logcat -d -s sayya:V > shots/logcat.txt || true
       - uses: actions/upload-artifact@v4
         with: { name: emulator-screenshots, path: shots/ }
