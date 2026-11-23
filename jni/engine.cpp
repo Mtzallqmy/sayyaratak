@@ -335,6 +335,7 @@ void drawFrame(float dt) {
 
     // ground + far ring
     drawMesh(G.ground, I, vp, 1,1,1,1, 0, 1, 0, 0.04f, 12, 0, 0, 0);
+    drawMesh(G.roadMesh, I, vp, 1,1,1,1, 7, 1, 0, 0.05f, 12, 0, 0, 0);
     drawMesh(G.farRing, I, vp, 1,1,1,1, 0, 0, 0, 0, 1, 0, 0, 0);
     // mountains + canyon
     drawMesh(G.mountains, I, vp, 1,1,1,1, 0, 0, 0, 0.05f, 8, 0, 0, 0);
@@ -432,7 +433,7 @@ void drawFrame(float dt) {
     // blob shadow
     glEnable(GL_BLEND); glDepthMask(false);
     M4 sh = M4::mul(M4::translate(carPos.x, 0.03f, carPos.z), M4::mul(M4::rotY(carYaw), M4::scale(1.5f, 1, 2.7f)));
-    drawMesh(G.shadowMesh, sh, M4::mul(vp, sh), 1,1,1,1, 0, 0, 0, 0, 1, 0, 0, 0);
+    drawMesh(G.shadowMesh, sh, M4::mul(vp, sh), 1,1,1,1, 6, 1, 0, 0, 1, 0, 0, 0);
     glDepthMask(true); glDisable(GL_BLEND);
 
     if (G.carModel.glReady) {
@@ -467,7 +468,7 @@ void drawFrame(float dt) {
         }
         if (G.neon) {
             glEnable(GL_BLEND); glDepthMask(false); glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-            drawMesh(G.carNeon, carM, cmvp, 1,1,1,1, 0, 0, 1.1f, 0, 1, 0, 0, 0);
+            drawMesh(G.carNeon, carM, cmvp, 1,1,1,1, 6, 1, 1.1f, 0, 1, 0, 0, 0);
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(true); glDisable(GL_BLEND);
         }
     } else {
@@ -491,7 +492,7 @@ void drawFrame(float dt) {
     drawMesh(G.carGlass, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 0, 0.95f, 110, 0, 0, 0.6f);
     if (G.neon) {
         glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-        drawMesh(G.carNeon, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 1.1f, 0, 1, 0, 0, 0);
+        drawMesh(G.carNeon, carM, M4::mul(vp, carM), 1,1,1,1, 6, 1, 1.1f, 0, 1, 0, 0, 0);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
     glDepthMask(true);

@@ -39,6 +39,30 @@ void buildScene() {
         }
         G.farRing.upload(m);
     }
+    // road ribbons: real 3D strips with tiled asphalt UVs (sharp at any distance)
+    {
+        MeshData rm;
+        float rc[4] = {1,1,1,1};
+        for (auto& rd : G.world.roads) {
+            float dx = rd.x2 - rd.x1, dz = rd.z2 - rd.z1;
+            float len = sqrtf(dx*dx + dz*dz);
+            if (len < 1.f) continue;
+            float ux = dx / len, uz = dz / len;   // unit along road
+            float px = -uz, pz = ux;              // unit across
+            float hw = rd.w * 0.5f;
+            // world-phase v: overlapping segments share dash alignment
+            float w1 = (rd.x1 * ux + rd.z1 * uz) / 8.f;
+            float w2 = (rd.x2 * ux + rd.z2 * uz) / 8.f;
+            V3 n = v3(0,1,0);
+            V3 a = v3(rd.x1 - px*hw, 0.05f, rd.z1 - pz*hw);
+            V3 b = v3(rd.x1 + px*hw, 0.05f, rd.z1 + pz*hw);
+            V3 c = v3(rd.x2 + px*hw, 0.05f, rd.z2 + pz*hw);
+            V3 d = v3(rd.x2 - px*hw, 0.05f, rd.z2 - pz*hw);
+            float uv[12] = {0,w1, 1,w1, 1,w2, 0,w1, 1,w2, 0,w2};
+            tri(rm, a,b,c, n, rc, uv); tri(rm, a,c,d, n, rc, uv+6);
+        }
+        G.roadMesh.upload(rm);
+    }
     // sky dome (hemisphere, vertex colored)
     {
         MeshData m;
@@ -107,10 +131,18 @@ void buildScene() {
             float h = 140 + ((r>>4)&0xFFFF)/65536.f*180;
             float base = 180 + (i%3)*70;
             float rc[4] = {0.52f+0.05f*(i%3), 0.42f, 0.34f, 1.f};
-            cone(m, x, -2, z, base, h, 8, rc);
+            float rc2[4] = {rc[0]*0.9f, rc[1]*0.88f, rc[2]*0.88f, 1.f};
+            float rc3[4] = {rc[0]*1.08f, rc[1]*1.05f, rc[2]*1.02f, 1.f};
+            // ridged peak: 3 overlapping cones instead of one pyramid
+            cone(m, x, -2, z, base, h, 9, rc);
+            cone(m, x + base*0.38f, -2, z + base*0.18f, base*0.68f, h*0.70f, 8, rc2);
+            cone(m, x - base*0.30f, -2, z - base*0.28f, base*0.55f, h*0.52f, 8, rc3);
         }
         float sb[4] = {0.45f, 0.38f, 0.33f, 1.f};
-        cone(m, -1250, -2, -900, 420, 330, 9, sb); // Jabal Sabir
+        float sb2[4] = {0.40f, 0.33f, 0.29f, 1.f};
+        cone(m, -1250, -2, -900, 420, 330, 10, sb); // Jabal Sabir
+        cone(m, -1090, -2, -840, 300, 240, 9, sb2);
+        cone(m, -1390, -2, -990, 260, 190, 9, sb2);
         G.mountains.upload(m);
     }
     // Hadramawt canyon walls

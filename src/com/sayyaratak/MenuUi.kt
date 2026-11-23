@@ -68,8 +68,10 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         }
         panel.addView(chips)
 
+        val scroll = android.widget.ScrollView(act)
+        scroll.addView(panel)
         val lp = UiKit.lp(-2, -2, Gravity.CENTER)
-        root.addView(panel, lp)
+        root.addView(scroll, lp)
     }
 
     fun setProgress(balance: Int, level: Int) {

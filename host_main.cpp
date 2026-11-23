@@ -117,6 +117,21 @@ int main(int argc, char** argv) {
         }
         uploadTex(6, (int*)sp.data(), sr, sr, false);
     }
+    // asphalt tile with white edges + dashed yellow center (mimics WorldPainter.roadPixels)
+    {
+        int ar=128; std::vector<unsigned> ap(ar*ar);
+        unsigned seed=4;
+        for (int y=0;y<ar;y++) for (int x=0;x<ar;x++) {
+            seed = seed*1664525u+1013904223u;
+            int n = 66 + ((seed>>13)&31);
+            unsigned c = 0xFF000000u | (unsigned)(n) | ((unsigned)(n-2)<<8) | ((unsigned)(n-4)<<16);
+            float u = x/(float)ar, v = y/(float)ar;
+            if (u < 0.045f || u > 0.955f) c = 0xFFE1DED2u; // ARGB whitish
+            if (u > 0.487f && u < 0.513f && v < 0.55f) c = 0xFFE8BE3Cu; // ARGB yellow
+            ap[y*ar+x] = c;
+        }
+        uploadTex(7, (int*)ap.data(), ar, ar, true);
+    }
 
     printf("texids: %u %u %u err=%d\n", texIds()[0], texIds()[1], texIds()[6], glGetError());
     int shot = 0;

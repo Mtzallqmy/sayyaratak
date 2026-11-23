@@ -286,6 +286,38 @@ object WorldPainter {
         return px
     }
 
+    fun roadPixels(res: Int, asphalt: Bitmap?): IntArray {
+        val px = IntArray(res * res)
+        val rnd = java.util.Random(9)
+        val asc = android.graphics.Bitmap.createScaledBitmap(asphalt ?: return fallbackAsphalt(res), res, res, true)
+        for (y in 0 until res) for (x in 0 until res) {
+            var c = asc.getPixel(x, y)
+            // darken a touch for road wear
+            val r = (android.graphics.Color.red(c) * 0.82f).toInt()
+            val g = (android.graphics.Color.green(c) * 0.82f).toInt()
+            val b = (android.graphics.Color.blue(c) * 0.82f).toInt()
+            c = android.graphics.Color.rgb(r, g, b)
+            val u = x.toFloat() / res
+            val v = y.toFloat() / res
+            // white edge lines
+            if (u < 0.045f || u > 0.955f) c = android.graphics.Color.argb(255, 225, 222, 210)
+            // dashed yellow center line: dash 55% of each tile
+            if (u in 0.487f..0.513f && v < 0.55f) c = android.graphics.Color.argb(255, 232, 190, 60)
+            px[y * res + x] = c
+        }
+        return px
+    }
+
+    private fun fallbackAsphalt(res: Int): IntArray {
+        val px = IntArray(res * res)
+        val rnd = java.util.Random(4)
+        for (i in px.indices) {
+            val n = 68 + rnd.nextInt(28)
+            px[i] = android.graphics.Color.rgb(n, n - 2, n - 4)
+        }
+        return px
+    }
+
     fun dashboardBitmap(w: Int, h: Int): Bitmap {
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)

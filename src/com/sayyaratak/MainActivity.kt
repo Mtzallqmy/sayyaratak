@@ -186,6 +186,17 @@ class MainActivity : Activity() {
         settings.build(root)
 
         setContentView(root)
+        root.setOnApplyWindowInsetsListener { v, ins ->
+            var l = ins.systemWindowInsetLeft; var t = ins.systemWindowInsetTop
+            var r = ins.systemWindowInsetRight; var b = ins.systemWindowInsetBottom
+            val cut = ins.displayCutout
+            if (cut != null) {
+                l = maxOf(l, cut.safeInsetLeft); t = maxOf(t, cut.safeInsetTop)
+                r = maxOf(r, cut.safeInsetRight); b = maxOf(b, cut.safeInsetBottom)
+            }
+            v.setPadding(l, t, r, b)
+            ins
+        }
         ErrorTrap.showPreviousIfAny(this, root)
 
         // garage drag to rotate (workshop/menu)
@@ -240,6 +251,7 @@ class MainActivity : Activity() {
         }
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_PALM, WorldPainter.palmPixels(256), 256, 256, true)
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_PARTICLE, WorldPainter.particlePixels(64), 64, 64, false)
+        NativeBridge.nativeUploadTexture(NativeBridge.TEX_ASPHALT, WorldPainter.roadPixels(256, asphaltBmp), 256, 256, true)
     }
 
     private fun setMode(m: Int) {

@@ -1,5 +1,6 @@
 // Sayyaratak GL layer: shader program, GL mesh, texture store.
 #pragma once
+#include <cstring>
 #include <GLES3/gl3.h>
 #include <vector>
 #include <string>
@@ -173,6 +174,17 @@ static void uploadTex(int slot, const int* px, int w, int h, bool mip) {
     if (mip) {
         glGenerateMipmap(GL_TEXTURE_2D);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        static int aniso = -1;
+        if (aniso < 0) {
+            const char* ext = (const char*)glGetString(GL_EXTENSIONS);
+            aniso = (ext && strstr(ext, "texture_filter_anisotropic")) ? 1 : 0;
+        }
+        if (aniso) {
+            float mx = 4.f;
+            glGetFloatv(0x84FF /*GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT*/, &mx);
+            if (mx > 8.f) mx = 8.f;
+            if (mx >= 2.f) glTexParameterf(GL_TEXTURE_2D, 0x84FE /*GL_TEXTURE_MAX_ANISOTROPY_EXT*/, mx);
+        }
     } else {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     }

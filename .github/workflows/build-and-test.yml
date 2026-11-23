@@ -81,11 +81,9 @@ jobs:
             mkdir -p shots
             # read the real (landscape) screen size from a probe screenshot
             adb shell screencap -p /sdcard/probe.png && adb pull /sdcard/probe.png shots/probe.png
-            read W H < <(python3 -c "
-            import struct
-            with open('shots/probe.png','rb') as f: d = f.read(33)
-            print(struct.unpack('>I', d[16:20])[0], struct.unpack('>I', d[20:24])[0])
-            ")
+            WH=$(python3 -c "import struct; d=open('shots/probe.png','rb').read(33); print(struct.unpack('>I', d[16:20])[0], struct.unpack('>I', d[20:24])[0])")
+            W=$(echo $WH | cut -d' ' -f1)
+            H=$(echo $WH | cut -d' ' -f2)
             echo "screen: ${W}x${H}"
             # dismiss the system immersive-mode dialog ("GOT IT" sits ~62% across, ~49% down)
             adb shell input tap $((W*62/100)) $((H*49/100))

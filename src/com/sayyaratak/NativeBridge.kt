@@ -65,4 +65,5 @@ object NativeBridge {
     const val TEX_BLDG_WHITE = 4
     const val TEX_PALM = 5
     const val TEX_PARTICLE = 6
+    const val TEX_ASPHALT = 7
 }
