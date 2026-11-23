@@ -44,7 +44,7 @@ struct Game {
     float slipT = 0, slipB = 0; // TC / ABS intervention indicators
     int driveMode = 0;      // 0 RWD, 1 AWD, 2 4L low-range
     float fuel = 100;       // 0..100
-    float engineTemp = 60;  // celsius-ish 40..115
+    float shiftTimer = 0, engineTemp = 60;  // celsius-ish 40..115
     bool lightsOn = false;
     float paint[3] = {0.62f, 0.05f, 0.06f};
     int wheels = 0;

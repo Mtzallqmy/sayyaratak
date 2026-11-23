@@ -48,7 +48,7 @@ private:
     struct Shot { int type; float t; };
     std::vector<Shot> shots;
     std::mutex mu;
-    float ph1 = 0.f, ph2 = 0.f, ph3 = 0.f;   // engine phases
+    float ph3 = 0.f, crank = 0.f;            // sub phase + 4-stroke crank position
     float lp = 0.f, lp2 = 0.f;               // lowpass state
     float lpw = 0.f;                          // wind lowpass
     unsigned rng = 12345u;
@@ -80,13 +80,22 @@ private:
         for (int i = 0; i < frames; i++) {
             float s = 0.f;
             if (on) {
-                ph1 += f / sr; if (ph1 > 1.f) ph1 -= 1.f;
-                ph2 += f * 1.494f / sr; if (ph2 > 1.f) ph2 -= 1.f;
+                // Engine model derived from DasEtwas/enginesound (MIT, see THIRD_PARTY.md):
+                // crank position sweeps one 4-stroke cycle (2 revolutions); each cylinder
+                // contributes piston motion cos(4*pi*crank) plus a sine ignition pulse in
+                // the power stroke; six cylinders at even crank offsets.
+                float realRpm = 800.f + rpm * 6200.f;
+                crank += realRpm / 120.f / sr; if (crank > 1.f) crank -= 1.f;
+                float ign = 0.20f + thr * 0.9f;
+                float eng = 0.f;
+                for (int c = 0; c < 6; c++) {
+                    float cr = crank + c * (1.f / 6.f); cr -= floorf(cr);
+                    eng += cosf(cr * 12.566371f) * 0.10f;
+                    if (cr > 0.5f && cr < 0.65f)
+                        eng += sinf((cr - 0.5f) / 0.15f * 3.1415927f) * ign * 0.22f;
+                }
                 ph3 += f * 0.5f / sr; if (ph3 > 1.f) ph3 -= 1.f;
-                float saw1 = ph1 * 2.f - 1.f;
-                float saw2 = ph2 * 2.f - 1.f;
-                float sub = sinf(ph3 * 6.2831853f);
-                float eng = saw1 * 0.45f + saw2 * 0.25f + sub * 0.45f;
+                eng += sinf(ph3 * 6.2831853f) * 0.30f; // keep a little sub body
                 lp += bright * (eng - lp);
                 lp2 += bright * 3.f * (lp - lp2);
                 float e = lp2 * drive;

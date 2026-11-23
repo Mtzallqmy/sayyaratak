@@ -36,7 +36,14 @@ void stepPhysics(float dt) {
     // steering
     float maxSteer = 0.58f / (1.f + fabsf(speed) * 0.045f);
     float target = G.inSteer * maxSteer;
-    G.steer += (target - G.steer) * fminf(1.f, dt * 7.f);
+    // Steering smoothing derived from DAShoe1/Godot-Easy-Vehicle-Physics (MIT):
+    // slower rate into the turn, faster return to center, target decays with speed.
+    {
+        float decay = 1.f / (1.f + fabsf(speed) * 0.055f); // speed decay (their 0.20 scale adapted to m/s)
+        float tgt = target * decay;
+        float rate = (fabsf(tgt) > fabsf(G.steer) ? 4.25f : 11.0f); // steer-in vs countersteer
+        G.steer += (tgt - G.steer) * fminf(1.f, dt * rate);
+    }
 
     // ---- phase B: surface + drivetrain model ----
     bool offroad = !G.world.onRoad(G.pos.x, G.pos.z, 0.5f);
@@ -49,9 +56,27 @@ void stepPhysics(float dt) {
     bool low = G.driveMode == 2;
     float dmgP = 1.f - G.damage * 0.004f; if (dmgP < 0.45f) dmgP = 0.45f;
     float sp = fabsf(speed);
-    // shift logic (automatic)
-    if (G.gear < 6 && sp > TOPS[G.gear] * 0.90f) G.gear++;
-    else if (G.gear > 1 && sp < TOPS[G.gear - 1] * 0.70f) G.gear--;
+    // shift logic (automatic) derived from Dechode/Godot-Advanced-Vehicle (MIT):
+    // compare wheel torque in adjacent gears; shift only when the other gear pulls
+    // harder, with a 0.7 s cooldown between shifts.
+    G.shiftTimer = fmaxf(0.f, G.shiftTimer - dt);
+    if (G.shiftTimer <= 0.f && G.inThrottle > 0.05f) {
+        auto accelIn = [&](int g) {
+            float loG = g > 1 ? TOPS[g - 1] * 0.55f : 0.f;
+            float bandG = TOPS[g] - loG + 0.001f;
+            float r01 = (sp - loG) / bandG; if (r01 < 0.f) r01 = 0.f; if (r01 > 1.f) r01 = 1.f;
+            float tqG = 0.60f + 0.55f * sinf(fminf(1.f, r01) * 2.4f);
+            return tqG * GMUL[g];
+        };
+        float cur = accelIn(G.gear);
+        if (G.gear < 6 && sp > TOPS[G.gear] * 0.96f) {
+            G.gear++; G.shiftTimer = 0.7f; // redline guard: always shift at the top
+        } else if (G.gear < 6 && accelIn(G.gear + 1) > cur && sp > TOPS[G.gear] * 0.55f) {
+            G.gear++; G.shiftTimer = 0.7f;
+        } else if (G.gear > 1 && accelIn(G.gear - 1) > cur * 1.05f && sp < TOPS[G.gear - 1] * 0.85f) {
+            G.gear--; G.shiftTimer = 0.7f;
+        }
+    }
     // rpm within the gear band + torque curve (peaks mid-band)
     float lo = G.gear > 1 ? TOPS[G.gear - 1] * 0.55f : 0.f;
     float band = TOPS[G.gear] - lo + 0.001f;

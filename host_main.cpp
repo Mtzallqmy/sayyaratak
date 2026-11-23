@@ -167,7 +167,7 @@ int main(int argc, char** argv) {
     G.inThrottle = 1;
     for (int k = 0; k < 40; k++) drawFrame(0.016f);
     { float sp = sqrtf(G.vx*G.vx+G.vz*G.vz)*3.6f; printf("drive probe: %.1f kmh rpm=%.2f gear=%d fuel=%.2f\n", sp, G.rpm, G.gear, G.fuel); }
-    for (int k = 0; k < 200; k++) drawFrame(0.016f);
+    for (int k = 0; k < 60; k++) drawFrame(0.016f);
     { float sp = sqrtf(G.vx*G.vx+G.vz*G.vz)*3.6f; printf("drive probe2: %.1f kmh rpm=%.2f gear=%d\n", sp, G.rpm, G.gear); }
     snap("drive");
 
