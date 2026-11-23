@@ -40,6 +40,13 @@ object Progression {
         return true
     }
 
+    // one-off spend (repair, refuel, ...) - not an unlock
+    fun spend(ctx: Context, amount: Int): Boolean {
+        if (balance(ctx) < amount) return false
+        p(ctx).edit().putInt("balance", balance(ctx) - amount).apply()
+        return true
+    }
+
     fun resetAll(ctx: Context) = p(ctx).edit().clear().apply()
 
     private fun p(ctx: Context) = ctx.getSharedPreferences(PREF, Context.MODE_PRIVATE)
@@ -48,7 +55,7 @@ object Progression {
         "paint4" to 150, "paint5" to 150, "paint6" to 150, "paint7" to 150,
         "wheels1" to 250, "wheels2" to 250,
         "spoiler" to 400, "neon" to 600, "tint" to 250,
-        "engine0" to 200, "engine2" to 350
+        "engine0" to 200, "engine2" to 350, "awd" to 800
     )
 
     val MISSION_REWARDS = mapOf(1 to 300, 2 to 250, 3 to 350)

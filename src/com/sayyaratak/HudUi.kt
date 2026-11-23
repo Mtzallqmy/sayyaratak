@@ -12,6 +12,8 @@ import android.widget.TextView
 
 class HudUi(val act: Activity, val cb: Callbacks) {
     interface Callbacks {
+        fun onHorn()
+        fun onLights()
         fun onInput(throttle: Float, brake: Float, steer: Float, handbrake: Boolean)
         fun onCamera()
         fun onExitToMenu()
@@ -19,11 +21,11 @@ class HudUi(val act: Activity, val cb: Callbacks) {
 
     lateinit var panel: FrameLayout
     lateinit var speedo: SpeedometerView
+    lateinit var cockpit: CockpitView
     lateinit var scoreText: TextView
     lateinit var timerText: TextView
     lateinit var driftText: TextView
     lateinit var banner: TextView
-    private lateinit var dash: ImageView
 
     private var throttle = 0f
     private var brake = 0f
@@ -121,12 +123,22 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         pcp.setMargins(0, 0, 22 * d, 22 * d)
         panel.addView(pedalCol, pcp)
 
-        // dashboard overlay (hood camera)
-        dash = ImageView(act)
-        dash.setImageBitmap(WorldPainter.dashboardBitmap(1200, 420))
-        dash.scaleType = ImageView.ScaleType.FIT_XY
-        dash.visibility = View.GONE
-        panel.addView(dash, UiKit.lp(-1, UiKit.dp(act, 190f), Gravity.BOTTOM))
+        // cockpit dashboard (interior camera)
+        cockpit = CockpitView(act)
+        cockpit.setFont(UiKit.fontBold)
+        cockpit.visibility = View.GONE
+        panel.addView(cockpit, UiKit.lp(-1, UiKit.dp(act, 220f), Gravity.BOTTOM))
+
+        // horn + lights (left of the pedals)
+        val miscRow = UiKit.row(act)
+        val hornB = holdButton("بوق", 14f) { down -> if (down) cb.onHorn() }
+        miscRow.addView(hornB, UiKit.margins(UiKit.vlp(UiKit.dp(act, 80f), UiKit.dp(act, 52f)), 6 * d, 0, 6 * d, 0))
+        val lightsB = UiKit.btn(act, "أنوار", 14f)
+        lightsB.setOnClickListener { cb.onLights() }
+        miscRow.addView(lightsB, UiKit.margins(UiKit.vlp(UiKit.dp(act, 80f), UiKit.dp(act, 52f)), 6 * d, 0, 6 * d, 0))
+        val mrp = UiKit.lp(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        mrp.setMargins(0, 0, 0, 24 * d)
+        panel.addView(miscRow, mrp)
 
         panel.visibility = View.GONE
         root.addView(panel)
@@ -168,7 +180,7 @@ class HudUi(val act: Activity, val cb: Callbacks) {
     }
 
     fun setDashboard(visible: Boolean) {
-        dash.visibility = if (visible) View.VISIBLE else View.GONE
+        cockpit.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     fun resetInput() {

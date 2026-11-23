@@ -107,6 +107,12 @@ private:
                         float fr = sh.t < 0.14f ? 880.f : 1318.f;
                         x = sinf(sh.t * fr * 6.2831853f) * expf(-sh.t * 8.f) * 0.35f;
                         if (sh.t > 0.35f) x = 0.f;
+                    } else if (sh.type == 3) {
+                        // car horn: dual-tone 370 + 460 Hz, held 0.45 s
+                        float env = sh.t < 0.45f ? (1.f - sh.t * 0.4f) : 0.f;
+                        float v = sinf(sh.t * 370.f * 6.2831853f) + sinf(sh.t * 462.f * 6.2831853f)
+                                + 0.5f * sinf(sh.t * 740.f * 6.2831853f);
+                        x = tanhf(v * 1.4f) * 0.30f * env;
                     } else {
                         float n = noise();
                         lp += 0.f; // keep lp state stable

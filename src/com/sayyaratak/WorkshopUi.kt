@@ -17,6 +17,10 @@ class WorkshopUi(val act: Activity, val cb: Callbacks) {
         fun onTint(on: Boolean)
         fun onEngine(p: Int)
         fun onPreviewRev()
+        fun onRepairCost(): Int
+        fun onRepair(): Boolean
+        fun onRefuel(): Boolean
+        fun onDriveMode(m: Int): Boolean
         fun onCloseWorkshop()
     }
 
@@ -61,7 +65,7 @@ class WorkshopUi(val act: Activity, val cb: Callbacks) {
         card.setPadding(16 * d, 12 * d, 16 * d, 14 * d)
 
         val tabs = UiKit.row(act)
-        val tabDefs = listOf("اللون", "الجنوط", "الإضافات", "الصوت")
+        val tabDefs = listOf("اللون", "الجنوط", "الإضافات", "الصوت", "الصيانة")
         for (i in tabDefs.indices) {
             val t = UiKit.btn(act, tabDefs[i], 13f)
             t.setOnClickListener { showTab(i) }
@@ -70,7 +74,7 @@ class WorkshopUi(val act: Activity, val cb: Callbacks) {
         card.addView(tabs, UiKit.vlp(-1, -2))
         content = UiKit.column(act)
         content.gravity = Gravity.CENTER
-        card.addView(content, UiKit.margins(UiKit.vlp(-1, UiKit.dp(act, 96f)), 0, 10 * d, 0, 0))
+        card.addView(content, UiKit.margins(UiKit.vlp(-1, UiKit.dp(act, 110f)), 0, 10 * d, 0, 0))
 
         panel.addView(card, UiKit.lp(-1, -2, Gravity.BOTTOM))
         panel.visibility = View.GONE
@@ -127,6 +131,31 @@ class WorkshopUi(val act: Activity, val cb: Callbacks) {
                 for (b in listOf(spoilerBtn, neonBtn, tintBtn))
                     r.addView(b, UiKit.margins(UiKit.vlp(0, UiKit.dp(act, 48f)).also { it.weight = 1f }, 4 * d, 0, 4 * d, 0))
                 content.addView(r, UiKit.vlp(-1, -2))
+            }
+            4 -> {
+                // الصيانة: إصلاح، وقود، نمط الدفع
+                val r1 = UiKit.row(act)
+                val rep = UiKit.btn(act, "إصلاح الأضرار (${cb.onRepairCost()})", 13f)
+                rep.setOnClickListener {
+                    if (cb.onRepair()) rep.text = "تم الإصلاح" else rep.text = "الرصيد غير كافٍ"
+                }
+                val fuel = UiKit.btn(act, "تعبئة الوقود (50)", 13f)
+                fuel.setOnClickListener {
+                    if (cb.onRefuel()) fuel.text = "الخزان ممتلئ" else fuel.text = "الرصيد غير كافٍ"
+                }
+                for (b in listOf(rep, fuel))
+                    r1.addView(b, UiKit.margins(UiKit.vlp(0, UiKit.dp(act, 48f)).also { it.weight = 1f }, 4 * d, 0, 4 * d, 0))
+                content.addView(r1, UiKit.vlp(-1, -2))
+                val modes = listOf("دفع خلفي", "دفع رباعي", "وضع وعرة")
+                val r2 = UiKit.row(act)
+                for (k in 0..2) {
+                    val b = UiKit.btn(act, modes[k], 12f)
+                    b.setOnClickListener {
+                        if (!cb.onDriveMode(k)) b.text = modes[k] + " (800)"
+                    }
+                    r2.addView(b, UiKit.margins(UiKit.vlp(0, UiKit.dp(act, 44f)).also { it.weight = 1f }, 4 * d, 4 * d, 4 * d, 0))
+                }
+                content.addView(r2, UiKit.vlp(-1, -2))
             }
             3 -> {
                 val names = listOf("هادئ", "رياضي", "وحش")

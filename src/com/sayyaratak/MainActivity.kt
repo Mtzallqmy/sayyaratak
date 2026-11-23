@@ -26,8 +26,9 @@ class MainActivity : Activity() {
     private lateinit var settings: SettingsUi
     private lateinit var hud: HudUi
     private val handler = Handler(Looper.getMainLooper())
-    private val state = FloatArray(16)
+    private val state = FloatArray(22)
     private var mode = NativeBridge.MODE_MENU
+    private var lightsOn = false
     private var challengeEnded = false
     private var missionEnded = false
     private var missionCity = 0
@@ -105,6 +106,11 @@ class MainActivity : Activity() {
         root.addView(glView)
 
         hud = HudUi(this, object : HudUi.Callbacks {
+            override fun onHorn() { glView.queueEvent { NativeBridge.nativeHorn() } }
+            override fun onLights() {
+                lightsOn = !lightsOn
+                glView.queueEvent { NativeBridge.nativeSetLights(lightsOn) }
+            }
             override fun onInput(t: Float, b: Float, s: Float, hb: Boolean) {
                 glView.queueEvent { NativeBridge.nativeSetInput(t, b, s, hb) }
             }
@@ -161,6 +167,32 @@ class MainActivity : Activity() {
                 glView.queueEvent { NativeBridge.nativeSetEngineProfile(p) }
             }
             override fun onPreviewRev() { glView.queueEvent { NativeBridge.nativePreviewRev() } }
+            override fun onRepairCost(): Int = (state[NativeBridge.ST_DAMAGE] * 300f).toInt()
+            override fun onRepair(): Boolean {
+                val cost = onRepairCost()
+                if (cost <= 0) return true
+                if (!Progression.spend(this@MainActivity, cost)) return false
+                glView.queueEvent { NativeBridge.nativeRepair() }
+                refreshBest()
+                return true
+            }
+            override fun onRefuel(): Boolean {
+                if (state[NativeBridge.ST_FUEL] > 0.98f) return true
+                if (!Progression.spend(this@MainActivity, 50)) return false
+                glView.queueEvent { NativeBridge.nativeRefuel() }
+                refreshBest()
+                return true
+            }
+            override fun onDriveMode(m: Int): Boolean {
+                if (m == 1 && !Progression.unlocked(this@MainActivity, "awd")) {
+                    if (!Progression.buy(this@MainActivity, "awd", 800)) return false
+                }
+                if (m == 2 && !Progression.unlocked(this@MainActivity, "awd")) return false
+                prefs.edit().putInt("drivemode", m).apply()
+                glView.queueEvent { NativeBridge.nativeSetDriveMode(m) }
+                refreshBest()
+                return true
+            }
             override fun onCloseWorkshop() { showMenu() }
         })
         workshop.build(root)
@@ -252,6 +284,12 @@ class MainActivity : Activity() {
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_PALM, WorldPainter.palmPixels(256), 256, 256, true)
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_PARTICLE, WorldPainter.particlePixels(64), 64, 64, false)
         NativeBridge.nativeUploadTexture(NativeBridge.TEX_ASPHALT, WorldPainter.roadPixels(256, asphaltBmp), 256, 256, true)
+        assetBmp("sky.jpg")?.let { sky ->
+            val s2048 = android.graphics.Bitmap.createScaledBitmap(sky, 1024, 512, true)
+            val px = IntArray(1024 * 512)
+            s2048.getPixels(px, 0, 1024, 0, 0, 1024, 512)
+            NativeBridge.nativeUploadTexture(NativeBridge.TEX_SKY, px, 1024, 512, true)
+        }
     }
 
     private fun setMode(m: Int) {
@@ -350,6 +388,16 @@ class MainActivity : Activity() {
                 hud.onDistrictChanged(state[NativeBridge.ST_DISTRICT].toInt())
                 hud.onDrift(state[NativeBridge.ST_DRIFT] > 0.5f)
                 hud.setDashboard(state[NativeBridge.ST_CAMERA] == 1f)
+                val cp = hud.cockpit
+                cp.kmh = state[NativeBridge.ST_SPEED]
+                val rp = state[NativeBridge.ST_RPMGEAR]
+                cp.rpm01 = kotlin.math.floor(rp) / 10f
+                cp.gear = ((rp - kotlin.math.floor(rp)) * 100f + 0.5f).toInt()
+                cp.steer = state[NativeBridge.ST_STEER] / 100f
+                cp.fuel = state[NativeBridge.ST_FUEL]
+                cp.temp = state[NativeBridge.ST_TEMP]
+                cp.damage = state[NativeBridge.ST_DAMAGE]
+                cp.invalidate()
                 val packed = state[NativeBridge.ST_MISSION_PROG].toInt()
                 val prog = packed / 10000; val goal = packed % 10000
                 val spacked = state[NativeBridge.ST_MISSION_STATE].toInt()
@@ -380,6 +428,16 @@ class MainActivity : Activity() {
                 hud.onDistrictChanged(state[NativeBridge.ST_DISTRICT].toInt())
                 hud.onDrift(state[NativeBridge.ST_DRIFT] > 0.5f)
                 hud.setDashboard(state[NativeBridge.ST_CAMERA] == 1f)
+                val cp = hud.cockpit
+                cp.kmh = state[NativeBridge.ST_SPEED]
+                val rp = state[NativeBridge.ST_RPMGEAR]
+                cp.rpm01 = kotlin.math.floor(rp) / 10f
+                cp.gear = ((rp - kotlin.math.floor(rp)) * 100f + 0.5f).toInt()
+                cp.steer = state[NativeBridge.ST_STEER] / 100f
+                cp.fuel = state[NativeBridge.ST_FUEL]
+                cp.temp = state[NativeBridge.ST_TEMP]
+                cp.damage = state[NativeBridge.ST_DAMAGE]
+                cp.invalidate()
                 // persist bests
                 val best = prefs.getInt("best", 0)
                 if (state[NativeBridge.ST_SCORE] > best) prefs.edit().putInt("best", state[NativeBridge.ST_SCORE].toInt()).apply()

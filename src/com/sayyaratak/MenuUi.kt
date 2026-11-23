@@ -33,6 +33,9 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         sub.setPadding(0, 0, 0, 16 * d)
         panel.addView(title)
         panel.addView(sub)
+        val dev = UiKit.label(act, "برمجة وتطوير معتز العلقمي – تعز – اليمن – 2026م", 11f, Color.argb(120, 255, 255, 255))
+        dev.setPadding(0, 0, 0, 10 * d)
+        panel.addView(dev)
 
         bestText = UiKit.label(act, "", 13f, Color.argb(190, 255, 230, 160))
         panel.addView(bestText)

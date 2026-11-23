@@ -84,14 +84,25 @@ void buildScene() {
                     c[3] = 1;
                 };
                 V3 p00=pt(e0,a0), p01=pt(e0,a1), p10=pt(e1,a0), p11=pt(e1,a1);
-                float c0[4], c1[4]; col(e0,c0); col(e1,c1);
+                // tint: neutral warm at horizon, blue-biased up high (multiplies the texture)
+                auto tint = [&](float e, float c[4]) {
+                    float t = e / 1.45f;
+                    c[0] = 1.00f*(1-t) + 0.62f*t;
+                    c[1] = 0.96f*(1-t) + 0.76f*t;
+                    c[2] = 0.90f*(1-t) + 1.00f*t;
+                    c[3] = 1;
+                };
+                float c0[4], c1[4]; tint(e0, c0); tint(e1, c1); (void)col;
                 V3 n = vnorm(vscale(pt((e0+e1)/2,(a0+a1)/2), -1.f));
-                vert(m, p00, n, 0,0, c0[0],c0[1],c0[2],1);
-                vert(m, p10, n, 0,0, c1[0],c1[1],c1[2],1);
-                vert(m, p11, n, 0,0, c1[0],c1[1],c1[2],1);
-                vert(m, p00, n, 0,0, c0[0],c0[1],c0[2],1);
-                vert(m, p11, n, 0,0, c1[0],c1[1],c1[2],1);
-                vert(m, p01, n, 0,0, c0[0],c0[1],c0[2],1);
+                // equirect UVs: u = azimuth, v = elevation band (pow remap pulls blue into view)
+                float u0=a0/6.2831853f, u1=a1/6.2831853f;
+                float v0=1.f-powf(e0/1.45f, 0.55f), v1=1.f-powf(e1/1.45f, 0.55f);
+                vert(m, p00, n, u0,v0, c0[0],c0[1],c0[2],1);
+                vert(m, p10, n, u0,v1, c1[0],c1[1],c1[2],1);
+                vert(m, p11, n, u1,v1, c1[0],c1[1],c1[2],1);
+                vert(m, p00, n, u0,v0, c0[0],c0[1],c0[2],1);
+                vert(m, p11, n, u1,v1, c1[0],c1[1],c1[2],1);
+                vert(m, p01, n, u1,v0, c0[0],c0[1],c0[2],1);
             }
         }
         G.sky.upload(m);
@@ -128,6 +139,12 @@ void buildScene() {
             float rad = 1250 + ((r>>8)&0xFFFF)/65536.f*350;
             float x = cosf(a)*rad, z = sinf(a)*rad;
             if (x > World::SEA_X - 100) continue; // not in the sea
+            bool nearCity = false;
+            for (int d = 0; d <= 5; d++) {
+                float dx = x - G.world.districts[d].cx, dz = z - G.world.districts[d].cz;
+                if (dx*dx + dz*dz < 750.f*750.f) { nearCity = true; break; }
+            }
+            if (nearCity) continue;
             float h = 140 + ((r>>4)&0xFFFF)/65536.f*180;
             float base = 180 + (i%3)*70;
             float rc[4] = {0.52f+0.05f*(i%3), 0.42f, 0.34f, 1.f};
@@ -150,14 +167,19 @@ void buildScene() {
         MeshData m;
         float rc[4] = {0.62f, 0.44f, 0.26f, 1.f};
         float rd[4] = {0.55f, 0.38f, 0.22f, 1.f};
+        float rl[4] = {0.74f, 0.57f, 0.38f, 1.f};
         for (int k = -2; k <= 2; k++) {
-            box(m, 0 + k*95, 26, -800 - 175, 100, 52, 60, k%2 ? rc : rd);
-            box(m, 0 + k*95, 22, -800 + 175, 100, 44, 60, k%2 ? rd : rc);
+            // layered wadi cliffs: dark base + lighter cap, pushed out from the street
+            float h1 = 18 + (k % 2 ? 5 : 0), h2 = 9 + ((k + 2) % 3) * 3;
+            box(m, 0 + k*95, h1/2, -800 - 235, 100, h1, 54, k%2 ? rc : rd);
+            box(m, 0 + k*95, h1 + h2/2, -800 - 235, 94, h2, 50, rl);
+            box(m, 0 + k*95, h1/2 - 1, -800 + 235, 100, h1 - 2, 54, k%2 ? rd : rc);
+            box(m, 0 + k*95, h1 - 1 + h2/2, -800 + 235, 94, h2, 50, rl);
         }
         G.canyon.upload(m);
         for (int k = -2; k <= 2; k++) {
-            G.world.colliders.push_back({k*95.f, -975.f, 50, 30});
-            G.world.colliders.push_back({k*95.f, -625.f, 50, 30});
+            G.world.colliders.push_back({k*95.f, -1035.f, 50, 28});
+            G.world.colliders.push_back({k*95.f, -565.f, 50, 28});
         }
     }
     // buildings per texture

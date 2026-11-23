@@ -9,7 +9,7 @@
 
 Game G;
 
-GLuint* texIds() { static GLuint t[8] = {0}; return t; }
+GLuint* texIds() { static GLuint t[12] = {0}; return t; }
 std::string& glErrorLog() { static std::string e; return e; }
 
 static const V3 SUN = {0.45f, 0.55f, -0.35f};
@@ -38,26 +38,61 @@ void stepPhysics(float dt) {
     float target = G.inSteer * maxSteer;
     G.steer += (target - G.steer) * fminf(1.f, dt * 7.f);
 
-    // drive
+    // ---- phase B: surface + drivetrain model ----
     bool offroad = !G.world.onRoad(G.pos.x, G.pos.z, 0.5f);
-    float accel = G.inThrottle * 10.5f;
-    float drag = 0.35f + fabsf(speed) * 0.012f + (offroad ? 2.2f : 0.f);
+    // surface table: asphalt vs sand/gravel (weather extends this later)
+    float surfGrip = offroad ? 0.68f : 1.0f;
+    float surfRoll = offroad ? 2.4f : 0.32f;
+    // 6-speed automatic: per-gear top speeds (m/s) and accel multipliers
+    static const float TOPS[7]  = {0, 12.f, 20.f, 29.f, 38.f, 46.f, 53.f};
+    static const float GMUL[7]  = {0, 1.0f, 0.74f, 0.56f, 0.44f, 0.36f, 0.30f};
+    bool low = G.driveMode == 2;
+    float dmgP = 1.f - G.damage * 0.004f; if (dmgP < 0.45f) dmgP = 0.45f;
+    float sp = fabsf(speed);
+    // shift logic (automatic)
+    if (G.gear < 6 && sp > TOPS[G.gear] * 0.90f) G.gear++;
+    else if (G.gear > 1 && sp < TOPS[G.gear - 1] * 0.70f) G.gear--;
+    // rpm within the gear band + torque curve (peaks mid-band)
+    float lo = G.gear > 1 ? TOPS[G.gear - 1] * 0.55f : 0.f;
+    float band = TOPS[G.gear] - lo + 0.001f;
+    float rpmT = fminf(1.f, fmaxf(0.f, (sp - lo) / band));
+    float rpmTarget = G.inThrottle > 0.05f ? 0.22f + 0.78f * rpmT : fmaxf(0.12f, 0.22f + 0.78f * rpmT * 0.6f);
+    G.rpm += (rpmTarget - G.rpm) * fminf(1.f, dt * 6.f);
+    float tq = 0.60f + 0.55f * sinf(fminf(1.f, G.rpm) * 2.4f);
+    // requested engine accel
+    float accel = G.inThrottle * 12.5f * tq * GMUL[G.gear] * dmgP * (low ? 1.9f : 1.f);
+    // traction limit: RWD lower than AWD/4L; TC clamps and flags
+    float tracLim = surfGrip * (G.driveMode >= 1 ? 12.0f : 8.6f);
+    if (accel > tracLim) { G.slipT = fminf(1.f, (accel - tracLim) / (accel + 0.01f)); accel = tracLim; }
+    else G.slipT = fmaxf(0.f, G.slipT - dt * 4.f);
+    float drag = surfRoll + fabsf(speed) * 0.012f + (G.inThrottle < 0.05f ? 0.45f + (6 - G.gear) * 0.10f : 0.f); // engine braking
     if (G.inBrake > 0) {
-        if (speed > 0.6f) accel -= G.inBrake * 14.f;
-        else accel -= G.inBrake * 6.5f; // reverse
+        float want = G.inBrake * (speed > 0.6f ? 14.f : 6.5f);
+        float brakeLim = surfGrip * 13.5f;
+        if (want > brakeLim) { G.slipB = fminf(1.f, (want - brakeLim) / (want + 0.01f)); want = brakeLim; } // ABS
+        else G.slipB = fmaxf(0.f, G.slipB - dt * 4.f);
+        accel -= want;
     }
     speed += (accel - drag * (speed > 0 ? 1 : (speed < 0 ? -1 : 0))) * dt;
-    float top = 52.f, rtop = -9.f;
+    float top = TOPS[6] * (low ? 0.55f : 1.f) * dmgP, rtop = -9.f;
     if (speed > top) speed = top;
     if (speed < rtop) speed = rtop;
     if (fabsf(speed) < 0.15f && G.inThrottle == 0 && G.inBrake == 0) speed = 0;
+    // damaged steering pull
+    if (G.damage > 60) G.steer += (G.damage - 60) * 0.0006f;
+    // fuel + engine temperature
+    G.fuel = fmaxf(0.f, G.fuel - dt * (0.05f + G.inThrottle * 0.22f + G.rpm * 0.08f));
+    if (G.fuel <= 0.f) accel *= 0.2f; // limp home on empty
+    float tempTarget = 62.f + G.rpm * 48.f;
+    G.engineTemp += (tempTarget - G.engineTemp) * fminf(1.f, dt * 0.06f);
+    if (G.engineTemp > 108.f) accel *= 0.75f; // heat soak
 
     // yaw
     float yaw = speed / 2.7f * tanf(G.steer);
     G.heading += yaw * dt;
 
     // lateral grip
-    float grip = G.inHandbrake ? 2.0f : (offroad ? 4.5f : 7.5f);
+    float grip = G.inHandbrake ? 2.0f : (offroad ? 4.2f : 7.5f) * (G.driveMode >= 1 ? 1.08f : 1.f);
     lat *= fmaxf(0.f, 1.f - grip * dt);
 
     // recompose velocity in (possibly new) heading frame
@@ -78,7 +113,8 @@ void stepPhysics(float dt) {
             float vn = G.vx * nx + G.vz * nz;
             if (vn < 0) {
                 G.vx -= vn * 1.5f * nx; G.vz -= vn * 1.5f * nz;
-                if (vn < -4) { G.shake = fminf(1.f, -vn * 0.08f); audioOneshot(2); }
+                if (vn < -4) { G.shake = fminf(1.f, -vn * 0.08f); audioOneshot(2);
+                    G.damage = fminf(100.f, G.damage + (-vn - 4.f) * 2.4f); }
             }
         }
     }
@@ -102,7 +138,8 @@ void stepPhysics(float dt) {
             G.pos.x += dx * push; G.pos.z += dz * push;
             float vn = G.vx * (dx / d) + G.vz * (dz / d);
             if (vn < 0) { G.vx -= vn * 1.4f * (dx / d); G.vz -= vn * 1.4f * (dz / d); }
-            if (-vn > 3.5f) { G.shake = fminf(1.f, -vn * 0.1f); audioOneshot(2); }
+            if (-vn > 3.5f) { G.shake = fminf(1.f, -vn * 0.1f); audioOneshot(2);
+                G.damage = fminf(100.f, G.damage + (-vn - 3.5f) * 1.8f); }
         }
     }
 
@@ -320,7 +357,7 @@ void drawFrame(float dt) {
     // sky (no fog, emissive, no depth write)
     glDepthMask(false);
     M4 skyM = M4::translate(cam.x, 0, cam.z);
-    drawMesh(G.sky, skyM, M4::mul(vp, skyM), 1,1,1,1, 0, 0, 0.9f, 0, 1, 0, 1, 0);
+    drawMesh(G.sky, skyM, M4::mul(vp, skyM), 1,1,1,1, 8, 1, 0.9f, 0, 1, 0, 1, 0);
     // sun billboard
     V3 sd = vnorm(SUN);
     M4 sunM = M4::mul(M4::translate(cam.x + sd.x * 2600, cam.y + sd.y * 2600, cam.z + sd.z * 2600),
@@ -469,6 +506,16 @@ void drawFrame(float dt) {
         if (G.neon) {
             glEnable(GL_BLEND); glDepthMask(false); glBlendFunc(GL_SRC_ALPHA, GL_ONE);
             drawMesh(G.carNeon, carM, cmvp, 1,1,1,1, 6, 1, 1.1f, 0, 1, 0, 0, 0);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(true); glDisable(GL_BLEND);
+        }
+        if (G.lightsOn) {
+            // soft headlight pools on the road ahead (+z is the car's front)
+            glEnable(GL_BLEND); glDepthMask(false); glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            for (int sd = -1; sd <= 1; sd += 2) {
+                M4 lm = M4::mul(carM, M4::mul(M4::translate(sd * 0.75f, 0.07f, 6.0f),
+                        M4::scale(1.5f, 1, 3.4f)));
+                drawMesh(G.shadowMesh, lm, M4::mul(vp, lm), 1.f, 0.95f, 0.78f, 0.30f, 6, 1, 0.6f, 0, 1, 0, 0, 0);
+            }
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(true); glDisable(GL_BLEND);
         }
     } else {

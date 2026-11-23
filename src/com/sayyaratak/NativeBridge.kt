@@ -8,6 +8,11 @@ object NativeBridge {
     external fun nativeSurfaceChanged(w: Int, h: Int)
     external fun nativeDrawFrame()
     external fun nativeGetState(out: FloatArray)
+    external fun nativeHorn()
+    external fun nativeRepair()
+    external fun nativeRefuel()
+    external fun nativeSetLights(on: Boolean)
+    external fun nativeSetDriveMode(m: Int)
     external fun nativeSetInput(throttle: Float, brake: Float, steer: Float, handbrake: Boolean)
     external fun nativeCycleCamera(): Int
     external fun nativeSetMode(mode: Int)
@@ -51,6 +56,13 @@ object NativeBridge {
     const val ST_STARS = 9
     const val ST_BEST = 10
     const val ST_OFFROAD = 11
+    const val ST_STEER = 10
+    const val ST_RPMGEAR = 16
+    const val ST_DAMAGE = 17
+    const val ST_SLIP = 18
+    const val ST_DRIVEMODE = 19
+    const val ST_FUEL = 20
+    const val ST_TEMP = 21
     const val ST_CHALLENGE_BEST = 12
 
     // texture slots
@@ -65,5 +77,6 @@ object NativeBridge {
     const val TEX_BLDG_WHITE = 4
     const val TEX_PALM = 5
     const val TEX_PARTICLE = 6
+    const val TEX_SKY = 8
     const val TEX_ASPHALT = 7
 }

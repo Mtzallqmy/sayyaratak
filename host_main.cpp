@@ -133,6 +133,18 @@ int main(int argc, char** argv) {
         uploadTex(7, (int*)ap.data(), ar, ar, true);
     }
 
+    // real equirect sky from assets (raw RGBA dumped by PIL)
+    {
+        FILE* f = fopen("/tmp/sky.rgba", "rb");
+        if (f) {
+            std::vector<unsigned> sk(1024*512);
+            size_t n = fread(sk.data(), 4, sk.size(), f);
+            fclose(f);
+            for (size_t i = 0; i < n; i++) { unsigned char* b=(unsigned char*)&sk[i]; sk[i]=((unsigned)b[3]<<24)|((unsigned)b[2]<<16)|((unsigned)b[1]<<8)|b[0]; }
+            uploadTex(8, (int*)sk.data(), 1024, 512, true);
+            printf("sky loaded %zu px\n", n);
+        } else printf("sky.rgba missing\n");
+    }
     printf("texids: %u %u %u err=%d\n", texIds()[0], texIds()[1], texIds()[6], glGetError());
     int shot = 0;
     auto snap = [&](const char* name) {
@@ -153,17 +165,29 @@ int main(int argc, char** argv) {
 
     // drive forward 4 seconds with throttle
     G.inThrottle = 1;
-    for (int k = 0; k < 90; k++) drawFrame(0.016f);
+    for (int k = 0; k < 40; k++) drawFrame(0.016f);
+    { float sp = sqrtf(G.vx*G.vx+G.vz*G.vz)*3.6f; printf("drive probe: %.1f kmh rpm=%.2f gear=%d fuel=%.2f\n", sp, G.rpm, G.gear, G.fuel); }
+    for (int k = 0; k < 200; k++) drawFrame(0.016f);
+    { float sp = sqrtf(G.vx*G.vx+G.vz*G.vz)*3.6f; printf("drive probe2: %.1f kmh rpm=%.2f gear=%d\n", sp, G.rpm, G.gear); }
     snap("drive");
 
     // teleport to each district
     const char* names[] = {"", "taiz", "sanaa", "ibb", "aden", "hadramawt"};
-    for (int di = 1; di <= 5; di++) {
+    for (int di = getenv("FAST") ? 5 : 1; di <= 5; di++) {
         G.pos = G.world.spawnFor(di); G.vx = G.vz = 0; G.heading = di==5?1.5708f:0.f; G.inThrottle = 0;
-        for (int k = 0; k < 25; k++) drawFrame(0.016f);
+        for (int k = 0; k < 45; k++) drawFrame(0.016f);
+        if (di == 5) {
+            printf("hadr dbg: pos=(%.1f,%.1f) cam=(%.1f,%.1f,%.1f)\n", G.pos.x, G.pos.z, G.camPos.x, G.camPos.y, G.camPos.z);
+            int nb = 0;
+            for (auto& b : G.world.bldgs) {
+                float dx = b.x - G.pos.x, dz = b.z - G.pos.z;
+                if (dx*dx + dz*dz < 90*90 && nb < 8) { printf("  bldg x=%.0f z=%.0f w=%.0f d=%.0f h=%.0f tex=%d\n", b.x, b.z, b.w, b.d, b.h, b.tex); nb++; }
+            }
+        }
         snap(names[di]);
     }
-    // mission mode: rings mission in Taiz
+    if (!getenv("FAST")) {
+// mission mode: rings mission in Taiz
     G.mode = 5; G.missionType = 1; G.missionCity = 1; G.missionGoal = 5; G.missionProgress = 1;
     G.missionState = 1; G.missionTime = 58; G.ringIdx = 1;
     // park the camera 25m behind ring #1, facing it
@@ -180,6 +204,8 @@ int main(int argc, char** argv) {
     printf("after frames: mode=%d state=%d ring=(%.1f,%.1f,%.1f) cam=(%.1f,%.1f)\n",
            G.mode, G.missionState, ring.x, ring.y, ring.z, G.pos.x, G.pos.z);
     snap("mission");
+}
+
     G.inThrottle = 0; G.mode = 2; G.missionState = 0;
     printf("done. speed=%.1f kmh pos=%.1f,%.1f\n", fabsf(G.vx)*3.6f, G.pos.x, G.pos.z);
     return 0;

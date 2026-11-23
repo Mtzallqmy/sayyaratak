@@ -37,6 +37,15 @@ struct Game {
     float steer = 0;
     float wheelSpin = 0;
     float vPitch = 0, vRoll = 0, prevSpeed = 0;
+    // phase B: drivetrain + damage simulation
+    float rpm = 0.12f;      // normalized 0..1
+    int gear = 1;           // 1..6 automatic
+    float damage = 0;       // 0..100
+    float slipT = 0, slipB = 0; // TC / ABS intervention indicators
+    int driveMode = 0;      // 0 RWD, 1 AWD, 2 4L low-range
+    float fuel = 100;       // 0..100
+    float engineTemp = 60;  // celsius-ish 40..115
+    bool lightsOn = false;
     float paint[3] = {0.62f, 0.05f, 0.06f};
     int wheels = 0;
     bool spoiler = true, neon = false, tint = true;

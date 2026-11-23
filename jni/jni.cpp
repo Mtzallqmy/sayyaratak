@@ -41,7 +41,7 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeDrawFrame(JNIEnv*,
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeGetState(JNIEnv* env, jclass, jfloatArray out) {
-    float s[16] = {0};
+    float s[22] = {0};
     float fwdX = sinf(G.heading), fwdZ = cosf(G.heading);
     s[0] = fabsf(G.vx * fwdX + G.vz * fwdZ) * 3.6f;   // speed km/h
     s[1] = G.score;
@@ -53,13 +53,19 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeGetState(JNIEnv* e
     s[7] = (float)G.camMode;
     s[8] = (float)G.world.districtAt(G.pos.x, G.pos.z);
     s[9] = (float)G.stars;
-    s[10] = 0;
+    s[10] = G.steer * 100.f;
     s[11] = G.world.onRoad(G.pos.x, G.pos.z, 0.5f) ? 0.f : 1.f;
     s[12] = (float)G.missionType;
     s[13] = G.mode == 5 ? G.missionTime : 0;
     s[14] = (float)G.missionProgress * 10000.f + (float)G.missionGoal; // packed
     s[15] = (float)G.missionState * 100000.f + (float)G.missionReward; // packed
-    env->SetFloatArrayRegion(out, 0, 16, s);
+    s[16] = G.rpm * 10.f + (float)G.gear * 0.01f;      // packed rpm + gear
+    s[17] = G.damage;
+    s[18] = G.slipT + G.slipB * 2.f;                   // TC bit0, ABS bit1
+    s[19] = (float)G.driveMode;
+    s[20] = G.fuel;
+    s[21] = G.engineTemp;
+    env->SetFloatArrayRegion(out, 0, 22, s);
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSetInput(JNIEnv*, jclass, jfloat t, jfloat b, jfloat s, jboolean hb) {
@@ -69,6 +75,26 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSetInput(JNIEnv*, 
 JNIEXPORT jint JNICALL Java_com_sayyaratak_NativeBridge_nativeCycleCamera(JNIEnv*, jclass) {
     G.camMode = (G.camMode + 1) % 3;
     return G.camMode;
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeRepair(JNIEnv*, jclass) {
+    G.damage = 0;
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeHorn(JNIEnv*, jclass) {
+    audioOneshot(3);
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeRefuel(JNIEnv*, jclass) {
+    G.fuel = 100;
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSetLights(JNIEnv*, jclass, jboolean on) {
+    G.lightsOn = on;
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSetDriveMode(JNIEnv*, jclass, jint m) {
+    G.driveMode = m;
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSetMode(JNIEnv*, jclass, jint m) {
