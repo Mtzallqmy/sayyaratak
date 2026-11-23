@@ -1,0 +1,88 @@
+name: Build and emulator test
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - name: Install Android SDK + NDK + kotlinc
+        run: |
+          mkdir -p $HOME/android/cmdline-tools
+          curl -sL -o /tmp/cmdtools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip
+          unzip -q /tmp/cmdtools.zip -d $HOME/android/cmdline-tools
+          mv $HOME/android/cmdline-tools/cmdline-tools $HOME/android/cmdline-tools/latest
+          export ANDROID_HOME=$HOME/android
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses >/dev/null
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125"
+          curl -sL -o /tmp/kotlinc.zip https://github.com/JetBrains/kotlin/releases/download/v2.0.21/kotlin-compiler-2.0.21.zip
+          unzip -q /tmp/kotlinc.zip -d $HOME/kotlin
+          echo "ANDROID_HOME=$HOME/android" >> $GITHUB_ENV
+          echo "KOTLINC=$HOME/kotlin/kotlinc/bin/kotlinc" >> $GITHUB_ENV
+      - name: Build APKs (arm64 release + x86_64 emulator)
+        run: |
+          ./build.sh
+          # extra emulator ABI
+          NDK=$ANDROID_HOME/ndk/26.1.10909125
+          $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android26-clang++ \
+            -shared -fPIC -O2 -std=c++17 -o /tmp/libsayya_x86.so \
+            jni/engine.cpp jni/scene.cpp jni/jni.cpp jni/audio.cpp \
+            -static-libstdc++ -lGLESv3 -lEGL -laaudio -llog -landroid -lm
+          cp build/Sayyaratak.apk /tmp/Sayyaratak-x86.apk
+          mkdir -p /tmp/x86pkg/lib/x86_64
+          cp /tmp/libsayya_x86.so /tmp/x86pkg/lib/x86_64/libsayya.so
+          (cd /tmp/x86pkg && zip -q /tmp/Sayyaratak-x86.apk lib/x86_64/libsayya.so)
+          keytool -genkeypair -alias ci -keyalg RSA -keysize 2048 -validity 365 \
+            -keystore /tmp/ci.jks -storepass citest123 -keypass citest123 \
+            -dname "CN=CI Test, OU=CI, O=CI, C=YE" 2>/dev/null
+          $ANDROID_HOME/build-tools/34.0.0/zipalign -f -p 4 /tmp/Sayyaratak-x86.apk /tmp/Sayyaratak-x86-aligned.apk
+          $ANDROID_HOME/build-tools/34.0.0/apksigner sign --ks /tmp/ci.jks --ks-pass pass:citest123 --key-pass pass:citest123 \
+            --out build/Sayyaratak-x86.apk /tmp/Sayyaratak-x86-aligned.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: apk-arm64, path: build/Sayyaratak.apk }
+      - uses: actions/upload-artifact@v4
+        with: { name: apk-x86_64-emulator, path: build/Sayyaratak-x86.apk }
+  emu-test:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        api-level: [29]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: apk-x86_64-emulator, path: /tmp }
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+      - name: Run on emulator, drive, screenshot
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          arch: x86_64
+          target: default
+          profile: pixel_6
+          disable-animations: true
+          script: |
+            adb install -r /tmp/Sayyaratak-x86.apk
+            adb shell settings put global window_animation_scale 0
+            adb shell monkey -p com.sayyaratak -c android.intent.category.LAUNCHER 1
+            sleep 12
+            mkdir -p shots
+            adb shell screencap -p /sdcard/menu.png && adb pull /sdcard/menu.png shots/menu.png
+            # tap "drive" button (center-ish lower) - coordinates for 1080x2400 landscape vary; capture anyway
+            adb shell input tap 540 1850
+            sleep 6
+            adb shell screencap -p /sdcard/game1.png && adb pull /sdcard/game1.png shots/game1.png
+            # hold gas (bottom-right area) by long swipe
+            adb shell input swipe 950 1900 950 1900 4000
+            adb shell screencap -p /sdcard/game2.png && adb pull /sdcard/game2.png shots/game2.png
+            adb shell input swipe 950 1900 950 1900 4000
+            adb shell screencap -p /sdcard/game3.png && adb pull /sdcard/game3.png shots/game3.png
+      - uses: actions/upload-artifact@v4
+        with: { name: emulator-screenshots, path: shots/ }

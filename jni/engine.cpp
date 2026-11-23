@@ -1,0 +1,456 @@
+// Sayyaratak: frame render + physics + JNI bridge.
+#include <jni.h>
+#include <cmath>
+#include <cstring>
+#include <android/log.h>
+#include "game.h"
+
+#define LOGI(...) __android_log_print(ANDROID_LOG_INFO, "sayya", __VA_ARGS__)
+
+Game G;
+
+GLuint* texIds() { static GLuint t[8] = {0}; return t; }
+std::string& glErrorLog() { static std::string e; return e; }
+
+static const V3 SUN = {0.45f, 0.55f, -0.35f};
+
+// ---------- physics ----------
+void spawnDust(int n, float r, float g, float b);
+void spawnBurst(float x, float y, float z, float r, float g, float b);
+
+static bool collideAABB(float x, float z, float hw, float hd, float& nx, float& nz) {
+    float dx = G.pos.x - x, dz = G.pos.z - z;
+    float px = hw + 1.0f - fabsf(dx), pz = hd + 1.0f - fabsf(dz);
+    if (px <= 0 || pz <= 0) return false;
+    if (px < pz) { nx = dx > 0 ? 1 : -1; nz = 0; G.pos.x += px * nx; }
+    else { nx = 0; nz = dz > 0 ? 1 : -1; G.pos.z += pz * nz; }
+    return true;
+}
+
+void stepPhysics(float dt) {
+    float fwdX = sinf(G.heading), fwdZ = cosf(G.heading);
+    float speed = G.vx * fwdX + G.vz * fwdZ;
+    float latX = G.vx - fwdX * speed, latZ = G.vz - fwdZ * speed;
+    float lat = sqrtf(latX * latX + latZ * latZ);
+
+    // steering
+    float maxSteer = 0.58f / (1.f + fabsf(speed) * 0.045f);
+    float target = G.inSteer * maxSteer;
+    G.steer += (target - G.steer) * fminf(1.f, dt * 7.f);
+
+    // drive
+    bool offroad = !G.world.onRoad(G.pos.x, G.pos.z, 0.5f);
+    float accel = G.inThrottle * 10.5f;
+    float drag = 0.35f + fabsf(speed) * 0.012f + (offroad ? 2.2f : 0.f);
+    if (G.inBrake > 0) {
+        if (speed > 0.6f) accel -= G.inBrake * 14.f;
+        else accel -= G.inBrake * 6.5f; // reverse
+    }
+    speed += (accel - drag * (speed > 0 ? 1 : (speed < 0 ? -1 : 0))) * dt;
+    float top = 52.f, rtop = -9.f;
+    if (speed > top) speed = top;
+    if (speed < rtop) speed = rtop;
+    if (fabsf(speed) < 0.15f && G.inThrottle == 0 && G.inBrake == 0) speed = 0;
+
+    // yaw
+    float yaw = speed / 2.7f * tanf(G.steer);
+    G.heading += yaw * dt;
+
+    // lateral grip
+    float grip = G.inHandbrake ? 2.0f : (offroad ? 4.5f : 7.5f);
+    lat *= fmaxf(0.f, 1.f - grip * dt);
+
+    // recompose velocity in (possibly new) heading frame
+    fwdX = sinf(G.heading); fwdZ = cosf(G.heading);
+    float rX = fwdZ, rZ = -fwdX;
+    float latSign = (latX * rX + latZ * rZ) >= 0 ? 1.f : -1.f;
+    G.vx = fwdX * speed + rX * lat * latSign;
+    G.vz = fwdZ * speed + rZ * lat * latSign;
+
+    G.pos.x += G.vx * dt;
+    G.pos.z += G.vz * dt;
+
+    // collisions
+    float nx = 0, nz = 0;
+    for (auto& c : G.world.colliders) {
+        if (fabsf(G.pos.x - c.x) > c.hw + 3 || fabsf(G.pos.z - c.z) > c.hd + 3) continue;
+        if (collideAABB(c.x, c.z, c.hw, c.hd, nx, nz)) {
+            float vn = G.vx * nx + G.vz * nz;
+            if (vn < 0) {
+                G.vx -= vn * 1.5f * nx; G.vz -= vn * 1.5f * nz;
+                if (vn < -4) { G.shake = fminf(1.f, -vn * 0.08f); audioOneshot(2); }
+            }
+        }
+    }
+    // bounds
+    float bx = 1130.f;
+    if (G.pos.x > World::SEA_X - 25) G.pos.x = World::SEA_X - 25;
+    if (G.pos.x < -bx) G.pos.x = -bx;
+    if (G.pos.z > bx) G.pos.z = bx;
+    if (G.pos.z < -bx) G.pos.z = -bx;
+
+    G.wheelSpin += speed * dt / 0.34f;
+
+    // visual weight transfer
+    {
+        float acc = dt > 0 ? (speed - G.prevSpeed) / dt : 0.f;
+        G.prevSpeed = speed;
+        float tp = -acc * 0.0045f; if (tp < -0.055f) tp = -0.055f; if (tp > 0.07f) tp = 0.07f;
+        float tr = G.steer * fabsf(speed) * 0.0028f; if (tr < -0.09f) tr = -0.09f; if (tr > 0.09f) tr = 0.09f;
+        float k = fminf(1.f, dt * 5.5f);
+        G.vPitch += (tp - G.vPitch) * k;
+        G.vRoll += (tr - G.vRoll) * k;
+    }
+
+    // drift score + particles
+    float slip = atan2f(lat, fabsf(speed) + 0.5f);
+    bool drifting = slip > 0.32f && fabsf(speed) > 8.f;
+    G.driftActive = drifting ? 1.f : 0.f;
+    if (drifting) {
+        G.driftAccum += slip * fabsf(speed) * dt * 1.4f;
+        if (G.driftAccum > 25.f) { G.score += 25; G.driftAccum = 0; }
+        spawnDust(2, 0.75f, 0.68f, 0.55f);
+    }
+    if (offroad && fabsf(speed) > 6) spawnDust(1, 0.82f, 0.72f, 0.5f);
+
+    // stars
+    for (size_t i = 0; i < G.world.stars.size() && i < 64; i++) {
+        if (G.starsMask[i]) continue;
+        V3 s = G.world.stars[i];
+        float dx = G.pos.x - s.x, dz = G.pos.z - s.z;
+        if (dx * dx + dz * dz < 9.f) {
+            G.starsMask[i] = 1; G.stars++;
+            audioOneshot(1);
+            for (int k = 0; k < 14; k++) spawnBurst(s.x, 1.6f, s.z, 1.f, 0.85f, 0.3f);
+        }
+    }
+
+    // challenge
+    if (G.mode == 3) {
+        G.challengeTime -= dt;
+        if (G.challengeTime <= 0) G.challengeTime = 0;
+        if (G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size()) {
+            V3 r = G.world.intersections[G.ringIdx];
+            float dx = G.pos.x - r.x, dz = G.pos.z - r.z;
+            if (dx * dx + dz * dz < 40.f) {
+                G.challengeHits++;
+                audioOneshot(1);
+                for (int k = 0; k < 16; k++) spawnBurst(r.x, 2.f, r.z, 1.f, 0.8f, 0.25f);
+                G.ringIdx = (G.ringIdx * 7 + 3) % (int)G.world.intersections.size();
+            }
+        }
+    }
+
+    // audio
+    float rpm = fminf(1.f, 0.14f + fabsf(speed) / top * 0.62f + G.inThrottle * 0.28f);
+    if (G.previewRev > 0) {
+        G.previewRev -= dt;
+        float t = 1.4f - G.previewRev;
+        rpm = 0.3f + sinf(fminf(t / 1.4f, 1.f) * 3.14159f) * 0.7f;
+        G.previewRev = fmaxf(0.f, G.previewRev);
+    }
+    audioState().rpm = rpm;
+    audioState().throttle = G.mode >= 2 || G.previewRev > 0 ? fmaxf(G.inThrottle, G.previewRev > 0 ? 0.6f : 0.f) : 0.f;
+    audioState().speed01 = fabsf(speed) / top;
+    audioState().slip = drifting ? fminf(1.f, slip) : 0.f;
+}
+
+void spawnDust(int n, float r, float g, float b) {
+    float back = G.heading + 3.14159f;
+    for (int i = 0; i < n; i++) {
+        if (G.ps.size() > 230) return;
+        float jx = (rand() % 100 / 100.f - 0.5f) * 1.6f;
+        Particle p;
+        p.pos = v3(G.pos.x + sinf(back) * 1.5f + jx, 0.25f, G.pos.z + cosf(back) * 1.5f + jx);
+        p.vel = v3(jx * 1.2f, 1.2f + rand() % 100 / 100.f, (rand() % 100 / 100.f - 0.5f) * 1.6f);
+        p.life = p.maxLife = 0.7f + rand() % 60 / 100.f;
+        p.size = 0.8f; p.r = r; p.g = g; p.b = b; p.a = 0.42f;
+        G.ps.push_back(p);
+    }
+}
+
+void spawnBurst(float x, float y, float z, float r, float g, float b) {
+    if (G.ps.size() > 230) return;
+    Particle p;
+    float a = (rand() % 628) / 100.f;
+    p.pos = v3(x, y, z);
+    p.vel = v3(cosf(a) * 3.5f, 2.5f + rand() % 30 / 10.f, sinf(a) * 3.5f);
+    p.life = p.maxLife = 0.8f;
+    p.size = 0.5f; p.r = r; p.g = g; p.b = b; p.a = 0.9f;
+    G.ps.push_back(p);
+}
+
+// ---------- render ----------
+static void setCommon(const M4& proj, const M4& view, V3 cam) {
+    Program& p = G.prog;
+    p.use();
+    glUniform3f(p.uSunDir, SUN.x, SUN.y, SUN.z);
+    glUniform3f(p.uSunCol, 1.15f, 1.02f, 0.82f);
+    glUniform3f(p.uAmbSky, 0.34f, 0.40f, 0.52f);
+    glUniform3f(p.uAmbGnd, 0.36f, 0.28f, 0.20f);
+    glUniform3f(p.uCamPos, cam.x, cam.y, cam.z);
+    glUniform3f(p.uFogCol, 0.91f, 0.78f, 0.62f);
+    float fe = G.quality == 0 ? 750 : (G.quality == 1 ? 1200 : 1700);
+    glUniform2f(p.uFog, 240, fe);
+    glUniform1i(p.uTex, 0);
+    glUniform2f(p.uRes, (float)G.scrW, (float)G.scrH);
+}
+
+static void drawMesh(GLMesh& m, const M4& model, const M4& mvp,
+                     float r, float g, float b, float a,
+                     int tex, float useTex, float emissive, float spec, float shin,
+                     float alphaTest, float noFog, float envRef) {
+    Program& p = G.prog;
+    glUniformMatrix4fv(p.uMVP, 1, false, mvp.m);
+    glUniformMatrix4fv(p.uModel, 1, false, model.m);
+    float n3[9] = {model.m[0],model.m[1],model.m[2], model.m[4],model.m[5],model.m[6], model.m[8],model.m[9],model.m[10]};
+    glUniformMatrix3fv(p.uNrm, 1, false, n3);
+    glUniform4f(p.uColor, r, g, b, a);
+    glUniform1f(p.uUseTex, useTex);
+    glUniform1f(p.uEmissive, emissive);
+    glUniform1f(p.uSpec, spec);
+    glUniform1f(p.uShin, shin);
+    glUniform1f(p.uAlphaTest, alphaTest);
+    glUniform1f(p.uNoFog, noFog);
+    glUniform1f(p.uEnvRef, envRef);
+    if (useTex > 0.5f) bindTex(tex);
+    m.draw();
+}
+
+void drawFrame(float dt) {
+    G.time += dt;
+    if (!G.sceneBuilt) return;
+    if (G.carDirty) buildCarGL();
+    if (G.carModel.loaded && !G.carModel.glReady) G.carModel.upload();
+    if (G.parkedModel.loaded && !G.parkedModel.glReady) G.parkedModel.upload();
+
+    bool driving = G.mode >= 2;
+    if (driving) stepPhysics(dt);
+    else {
+        G.garageAngle += dt * (G.mode == 1 ? 0.25f : 0.10f);
+        audioState().throttle = G.previewRev > 0 ? 0.6f : 0.f;
+        if (G.previewRev > 0) {
+            G.previewRev -= dt;
+            float t = fmaxf(0.f, G.previewRev);
+            audioState().rpm = 0.3f + sinf(fminf((1.4f - t) / 1.4f, 1.f) * 3.14159f) * 0.7f;
+        } else audioState().rpm = 0.12f;
+        audioState().speed01 = 0; audioState().slip = 0;
+    }
+
+    // camera
+    float fwdX = sinf(G.heading), fwdZ = cosf(G.heading);
+    V3 look;
+    if (driving) {
+        V3 want;
+        if (G.camMode == 0) want = v3(G.pos.x - fwdX * 7.6f, 3.1f, G.pos.z - fwdZ * 7.6f);
+        else if (G.camMode == 1) want = v3(G.pos.x + fwdX * 0.1f, 1.24f, G.pos.z + fwdZ * 0.1f);
+        else want = v3(G.pos.x - fwdX * 4.f, 42.f, G.pos.z - fwdZ * 4.f);
+        float k = G.camMode == 1 ? 1.f : 1.f - expf(-dt * (G.camMode == 2 ? 3.2f : 5.5f));
+        G.camPos = vadd(G.camPos, vscale(vsub(want, G.camPos), k));
+        look = G.camMode == 2 ? v3(G.pos.x, 0, G.pos.z)
+             : v3(G.pos.x + fwdX * 5.f, 1.0f, G.pos.z + fwdZ * 5.f);
+    } else {
+        float a = G.garageAngle;
+        G.camPos = v3(G.pos.x + sinf(a) * 7.2f, 2.3f, G.pos.z + cosf(a) * 7.2f);
+        look = v3(G.pos.x, 0.8f, G.pos.z);
+    }
+    G.shake = fmaxf(0.f, G.shake - dt * 2.2f);
+    V3 cam = G.camPos;
+    if (G.shake > 0) {
+        cam.x += (rand() % 100 / 100.f - 0.5f) * G.shake * 0.5f;
+        cam.y += (rand() % 100 / 100.f - 0.5f) * G.shake * 0.4f;
+    }
+    if (cam.y < 0.4f) cam.y = 0.4f;
+
+    M4 proj = M4::perspective(1.05f, (float)G.scrW / (float)G.scrH, 0.3f, 4200.f);
+    M4 view = M4::lookAt(cam, look, v3(0, 1, 0));
+    M4 vp = M4::mul(proj, view);
+
+    glViewport(0, 0, G.scrW, G.scrH);
+    glClearColor(0.91f, 0.78f, 0.62f, 1.f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glEnable(GL_DEPTH_TEST);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    setCommon(proj, view, cam);
+
+    M4 I = M4::ident();
+    // sky (no fog, emissive, no depth write)
+    glDepthMask(false);
+    M4 skyM = M4::translate(cam.x, 0, cam.z);
+    drawMesh(G.sky, skyM, M4::mul(vp, skyM), 1,1,1,1, 0, 0, 0.9f, 0, 1, 0, 1, 0);
+    // sun billboard
+    V3 sd = vnorm(SUN);
+    M4 sunM = M4::mul(M4::translate(cam.x + sd.x * 2600, cam.y + sd.y * 2600, cam.z + sd.z * 2600),
+                      M4::mul(M4::rotY(atan2f(-sd.x, -sd.z)), M4::rotX(-asinf(sd.y))));
+    glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+    drawMesh(G.sunMesh, sunM, M4::mul(vp, sunM), 1,1,1,1, 6, 1, 1.2f, 0, 1, 0, 1, 0);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    // clouds
+    drawMesh(G.cloudMesh, I, vp, 1,1,1,1, 6, 1, 0.85f, 0, 1, 0, 0, 0);
+    glDepthMask(true);
+    glDisable(GL_BLEND);
+
+    // ground + far ring
+    drawMesh(G.ground, I, vp, 1,1,1,1, 0, 1, 0, 0.04f, 12, 0, 0, 0);
+    drawMesh(G.farRing, I, vp, 1,1,1,1, 0, 0, 0, 0, 1, 0, 0, 0);
+    // mountains + canyon
+    drawMesh(G.mountains, I, vp, 1,1,1,1, 0, 0, 0, 0.05f, 8, 0, 0, 0);
+    drawMesh(G.canyon, I, vp, 1,1,1,1, 0, 0, 0, 0.1f, 10, 0, 0, 0);
+    // buildings
+    for (int t = 0; t < 4; t++)
+        drawMesh(G.bldgMesh[t], I, vp, 1,1,1,1, 1 + t, 1, 0, 0.10f, 14, 0, 0, 0);
+    // palms (alpha test)
+    drawMesh(G.palms, I, vp, 1,1,1,1, 5, 1, 0, 0.05f, 8, 1, 0, 0);
+    // stars
+    for (size_t i = 0; i < G.world.stars.size() && i < 64; i++) {
+        if (G.starsMask[i]) continue;
+        V3 s = G.world.stars[i];
+        M4 m = M4::mul(M4::translate(s.x, s.y + sinf(G.time * 2 + i) * 0.25f, s.z),
+                       M4::rotY(G.time * 1.5f + i));
+        drawMesh(G.starsMesh, m, M4::mul(vp, m), 1,1,1,1, 0, 0, 0.55f, 0.5f, 32, 0, 0, 0);
+    }
+    // challenge ring + beacon
+    if (G.mode == 3 && G.ringIdx >= 0 && G.ringIdx < (int)G.world.intersections.size()) {
+        V3 r = G.world.intersections[G.ringIdx];
+        M4 rm = M4::mul(M4::translate(r.x, 3.2f + sinf(G.time * 2.5f) * 0.3f, r.z), M4::rotY(G.time));
+        drawMesh(G.ringMesh, rm, M4::mul(vp, rm), 1,1,1,1, 0, 0, 1.0f, 0.6f, 48, 0, 0, 0);
+        M4 bm = M4::translate(r.x, 0, r.z);
+        glEnable(GL_BLEND); glBlendFunc(GL_SRC_ALPHA, GL_ONE); glDepthMask(false);
+        drawMesh(G.beaconMesh, bm, M4::mul(vp, bm), 1,1,1,1, 0, 0, 0.9f, 0, 1, 0, 0, 0);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(true); glDisable(GL_BLEND);
+    }
+    // parked cars
+    for (auto& pc : G.world.parked) {
+        M4 m = M4::mul(M4::translate(pc.x, 0, pc.z), M4::rotY(pc.heading));
+        M4 pmvp = M4::mul(vp, m);
+        if (G.parkedModel.glReady) {
+            const float* pc3 = PAINTS[pc.colorIdx];
+            for (int pi = 0; pi < G.parkedModel.partCount; pi++) {
+                CarPart& P = G.parkedModel.parts[pi];
+                if (P.flags & 4) drawMesh(P.gpu, m, pmvp, pc3[0],pc3[1],pc3[2],1, 0,0,0, 0.6f, 48, 0, 0, 0.4f);
+                else if (P.flags & 2) drawMesh(P.gpu, m, pmvp, 1,1,1,1, 0,0,0.4f, 0.5f, 48, 0, 0, 0.2f);
+                else if (P.flags & 1) { glEnable(GL_BLEND); glDepthMask(false);
+                    drawMesh(P.gpu, m, pmvp, 1,1,1,0.85f, 0,0,0, 0.9f, 90, 0, 0, 0.5f);
+                    glDepthMask(true); glDisable(GL_BLEND); }
+                else drawMesh(P.gpu, m, pmvp, 1,1,1,1, 0,0,0, 0.5f, 48, 0, 0, 0.35f);
+            }
+        } else {
+            drawMesh(G.parkedBody[pc.colorIdx], m, pmvp, 1,1,1,1, 0, 0, 0, 0.5f, 48, 0, 0, 0.35f);
+            glEnable(GL_BLEND); glDepthMask(false);
+            drawMesh(G.parkedGlass, m, pmvp, 1,1,1,0.9f, 0, 0, 0, 0.9f, 90, 0, 0, 0.5f);
+            glDepthMask(true); glDisable(GL_BLEND);
+        }
+    }
+
+    // player car
+    float carYaw = driving ? G.heading : -G.garageAngle * 1.2f;
+    V3 carPos = driving ? G.pos : G.pos;
+    M4 carM = M4::mul(M4::translate(carPos.x, carPos.y, carPos.z),
+                M4::mul(M4::rotY(carYaw), M4::mul(M4::rotZ(G.vRoll), M4::rotX(G.vPitch))));
+    // blob shadow
+    glEnable(GL_BLEND); glDepthMask(false);
+    M4 sh = M4::mul(M4::translate(carPos.x, 0.03f, carPos.z), M4::mul(M4::rotY(carYaw), M4::scale(1.5f, 1, 2.7f)));
+    drawMesh(G.shadowMesh, sh, M4::mul(vp, sh), 1,1,1,1, 0, 0, 0, 0, 1, 0, 0, 0);
+    glDepthMask(true); glDisable(GL_BLEND);
+
+    if (G.carModel.glReady) {
+        M4 cmvp = M4::mul(vp, carM);
+        float steerA = G.steer * 1.1f;
+        for (int pi = 0; pi < G.carModel.partCount; pi++) {
+            CarPart& P = G.carModel.parts[pi];
+            if ((P.flags & 8) && !G.spoiler) continue;   // wing hidden when spoiler off
+            if (P.flags & 1) continue;                    // glass drawn later
+            M4 lm = carM;
+            bool isWheel = P.name.rfind("wheel_", 0) == 0;
+            bool isSteer = P.name.rfind("steer_", 0) == 0;
+            if (isWheel || isSteer) {
+                float sa = (P.name == "wheel_FL" || P.name == "wheel_FR" || P.name == "steer_L" || P.name == "steer_R") ? steerA : 0.f;
+                lm = M4::mul(carM, M4::mul(M4::translate(P.pivot.x, P.pivot.y, P.pivot.z),
+                     M4::mul(M4::rotY(sa),
+                     M4::mul(isWheel ? M4::rotX(G.wheelSpin) : M4::ident(),
+                             M4::translate(-P.pivot.x, -P.pivot.y, -P.pivot.z)))));
+            }
+            M4 pm = M4::mul(vp, lm);
+            if (P.flags & 4) drawMesh(P.gpu, lm, pm, G.paint[0], G.paint[1], G.paint[2], 1, 0, 0, 0, 0.9f, 72, 0, 0, 0.6f);
+            else if (P.flags & 2) drawMesh(P.gpu, lm, pm, 1,1,1,1, 0, 0, 0.9f, 0.5f, 60, 0, 0, 0.2f);
+            else if (isWheel) drawMesh(P.gpu, lm, pm, 1,1,1,1, 0, 0, 0, 0.55f, 40, 0, 0, 0.3f);
+            else drawMesh(P.gpu, lm, pm, 1,1,1,1, 0, 0, 0, 0.6f, 40, 0, 0, 0.35f);
+        }
+        // glass
+        CarPart* gl = const_cast<CarPart*>(G.carModel.find("glass"));
+        if (gl) {
+            glEnable(GL_BLEND); glDepthMask(false);
+            drawMesh(gl->gpu, carM, cmvp, 1,1,1, G.tint ? 0.9f : 0.55f, 0, 0, 0, 0.95f, 110, 0, 0, 0.6f);
+            glDepthMask(true); glDisable(GL_BLEND);
+        }
+        if (G.neon) {
+            glEnable(GL_BLEND); glDepthMask(false); glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+            drawMesh(G.carNeon, carM, cmvp, 1,1,1,1, 0, 0, 1.1f, 0, 1, 0, 0, 0);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); glDepthMask(true); glDisable(GL_BLEND);
+        }
+    } else {
+    drawMesh(G.carTrim, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 0, 0.3f, 24, 0, 0, 0.15f);
+    drawMesh(G.carBody, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 0, 0.85f, 64, 0, 0, 0.55f);
+    if (G.spoiler) drawMesh(G.carSpoiler, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 0, 0.85f, 64, 0, 0, 0.55f);
+    drawMesh(G.carLights, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 0.5f, 0.6f, 80, 0, 0, 0.2f);
+    // wheels
+    CarParts dims;
+    for (int w = 0; w < 4; w++) {
+        float lx = (w % 2 == 0) ? -dims.wheelX : dims.wheelX;
+        float lz = (w < 2) ? dims.wheelZF : dims.wheelZR;
+        float steerA = (w < 2) ? G.steer * 1.1f : 0.f;
+        M4 wm = M4::mul(carM, M4::mul(M4::translate(lx, dims.wheelY, lz),
+                        M4::mul(M4::rotY(steerA), M4::rotX(G.wheelSpin))));
+        drawMesh(G.carTire, wm, M4::mul(vp, wm), 1,1,1,1, 0, 0, 0, 0.15f, 12, 0, 0, 0.05f);
+        drawMesh(G.carRim, wm, M4::mul(vp, wm), 1,1,1,1, 0, 0, 0, 0.8f, 90, 0, 0, 0.4f);
+    }
+    // glass + neon
+    glEnable(GL_BLEND); glDepthMask(false);
+    drawMesh(G.carGlass, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 0, 0.95f, 110, 0, 0, 0.6f);
+    if (G.neon) {
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        drawMesh(G.carNeon, carM, M4::mul(vp, carM), 1,1,1,1, 0, 0, 1.1f, 0, 1, 0, 0, 0);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+    glDepthMask(true);
+    }
+
+    // particles (billboard)
+    V3 cf2 = vnorm(vsub(look, cam));
+    V3 cr2 = vnorm(vcross(cf2, v3(0,1,0)));
+    V3 cu2 = vcross(cr2, cf2);
+    for (size_t i = 0; i < G.ps.size(); i++) {
+        Particle& p = G.ps[i];
+        p.life -= dt;
+        if (p.life <= 0) { G.ps[i] = G.ps.back(); G.ps.pop_back(); i--; continue; }
+        p.pos = vadd(p.pos, vscale(p.vel, dt));
+        p.vel.y -= 1.2f * dt;
+    }
+    if (!G.ps.empty()) {
+        G.pbuf.clear();
+        for (auto& p : G.ps) {
+            float t = p.life / p.maxLife;
+            float s = p.size * (1.6f - t);
+            float a = p.a * t;
+            V3 rx = vscale(cr2, s), ry = vscale(cu2, s);
+            V3 p0 = vsub(vsub(p.pos, rx), ry), p1 = vsub(vadd(p.pos, rx), ry);
+            V3 p2 = vadd(vadd(p.pos, rx), ry), p3 = vadd(vsub(p.pos, rx), ry);
+            V3 n = vscale(cf2, -1.f);
+            auto q = [&](V3 a0, V3 b0, V3 c0, float u0, float v0, float u1, float v1, float u2, float v2) {
+                G.pbuf.insert(G.pbuf.end(), {a0.x,a0.y,a0.z, n.x,n.y,n.z, u0,v0, p.r,p.g,p.b,a});
+                G.pbuf.insert(G.pbuf.end(), {b0.x,b0.y,b0.z, n.x,n.y,n.z, u1,v1, p.r,p.g,p.b,a});
+                G.pbuf.insert(G.pbuf.end(), {c0.x,c0.y,c0.z, n.x,n.y,n.z, u2,v2, p.r,p.g,p.b,a});
+            };
+            q(p0, p1, p2, 0,0, 1,0, 1,1);
+            q(p0, p2, p3, 0,0, 1,1, 0,1);
+        }
+        if (!G.pbuf.empty()) {
+            G.particles.stream(G.pbuf);
+            glDepthMask(false);
+            drawMesh(G.particles, I, vp, 1,1,1,1, 6, 1, 0.25f, 0, 1, 0, 0.4f, 0);
+            glDepthMask(true);
+        }
+    }
+    glDisable(GL_BLEND);
+}

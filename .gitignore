@@ -1,0 +1,4 @@
+build/
+tools_out/
+*.jks
+*.keystore
