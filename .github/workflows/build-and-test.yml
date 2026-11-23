@@ -79,15 +79,26 @@ jobs:
             adb shell monkey -p com.sayyaratak -c android.intent.category.LAUNCHER 1
             sleep 12
             mkdir -p shots
+            # read the real (landscape) screen size from a probe screenshot
+            adb shell screencap -p /sdcard/probe.png && adb pull /sdcard/probe.png shots/probe.png
+            read W H < <(python3 -c "
+            import struct
+            with open('shots/probe.png','rb') as f: d = f.read(33)
+            print(struct.unpack('>I', d[16:20])[0], struct.unpack('>I', d[20:24])[0])
+            ")
+            echo "screen: ${W}x${H}"
+            # dismiss the system immersive-mode dialog ("GOT IT" sits ~62% across, ~49% down)
+            adb shell input tap $((W*62/100)) $((H*49/100))
+            sleep 2
             adb shell screencap -p /sdcard/menu.png && adb pull /sdcard/menu.png shots/menu.png
-            # tap "drive" button (center-ish lower) - coordinates for 1080x2400 landscape vary; capture anyway
-            adb shell input tap 540 1850
+            # tap the free-drive button (centered, ~48% down)
+            adb shell input tap $((W/2)) $((H*48/100))
             sleep 6
             adb shell screencap -p /sdcard/game1.png && adb pull /sdcard/game1.png shots/game1.png
-            # hold gas (bottom-right area) by long swipe
-            adb shell input swipe 950 1900 950 1900 4000
+            # hold gas (bottom-right pedal) with a long stationary swipe
+            adb shell input swipe $((W*88/100)) $((H*80/100)) $((W*88/100)) $((H*80/100)) 4000
             adb shell screencap -p /sdcard/game2.png && adb pull /sdcard/game2.png shots/game2.png
-            adb shell input swipe 950 1900 950 1900 4000
+            adb shell input swipe $((W*88/100)) $((H*80/100)) $((W*88/100)) $((H*80/100)) 4000
             adb shell screencap -p /sdcard/game3.png && adb pull /sdcard/game3.png shots/game3.png
       - uses: actions/upload-artifact@v4
         with: { name: emulator-screenshots, path: shots/ }
