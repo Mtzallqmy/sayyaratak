@@ -88,23 +88,7 @@ jobs:
             W=$(echo $WH | cut -d' ' -f1)
             H=$(echo $WH | cut -d' ' -f2)
             echo "screen: ${W}x${H}"
-            # tap a UI node whose text contains $1; returns 0 when tapped
-            tap_text() {
-              python3 - "$1" <<'PY'
-              import subprocess, re, sys, xml.etree.ElementTree as ET
-              needle = sys.argv[1]
-              subprocess.run(["adb","shell","uiautomator","dump","/sdcard/ui.xml"], capture_output=True)
-              data = subprocess.run(["adb","shell","cat","/sdcard/ui.xml"], capture_output=True, text=True).stdout
-              for m in re.finditer(r'text="([^"]*)"[^>]*bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"', data):
-                  if needle in m.group(1):
-                      x = (int(m.group(2)) + int(m.group(4))) // 2
-                      y = (int(m.group(3)) + int(m.group(5))) // 2
-                      print("tap", repr(m.group(1))[:40], x, y)
-                      subprocess.run(["adb","shell","input","tap",str(x),str(y)])
-                      sys.exit(0)
-              sys.exit(1)
-PY
-            }
+            tap_text() { python3 scripts/tap_text.py "$1"; }
             # dismiss the system immersive dialog; retry while it re-appears
             for i in 1 2 3 4 5; do tap_text "GOT IT" || break; sleep 1; done
             sleep 1
