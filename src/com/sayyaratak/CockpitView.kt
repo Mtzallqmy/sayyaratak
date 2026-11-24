@@ -9,6 +9,7 @@ class CockpitView(ctx: Context) : View(ctx) {
     var kmh = 0f
     var rpm01 = 0.12f
     var gear = 1
+    var reverse = false
     var steer = 0f          // radians, ~+-0.6
     var fuel = 100f
     var temp = 60f
@@ -60,7 +61,7 @@ class CockpitView(ctx: Context) : View(ctx) {
 
         // gear indicator between gauges
         txt.textSize = gr * 0.55f; txt.color = Color.rgb(120, 220, 255)
-        c.drawText(if (kmh < 1f && rpm01 < 0.2f) "N" else gear.toString(), w * 0.5f, gy + gr * 0.2f, txt)
+        c.drawText(if (reverse) "R" else if (kmh < 1f) "D" else gear.toString(), w * 0.5f, gy + gr * 0.2f, txt)
         txt.textSize = gr * 0.2f; txt.color = Color.argb(190, 255, 255, 255)
         c.drawText("الترس", w * 0.5f, gy + gr * 0.55f, txt)
 

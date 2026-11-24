@@ -5,8 +5,8 @@ import android.graphics.Color
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -15,6 +15,7 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         fun onHorn()
         fun onLights()
         fun onInput(throttle: Float, brake: Float, steer: Float, handbrake: Boolean)
+        fun onGear()
         fun onCamera()
         fun onExitToMenu()
     }
@@ -34,15 +35,17 @@ class HudUi(val act: Activity, val cb: Callbacks) {
     private var wheelMode = false
     private var wheelSteer = 0f
     private lateinit var wheelView: SteerWheelView
+    private lateinit var gearButton: Button
     private lateinit var steerRow: android.widget.LinearLayout
     private var handbrake = false
+    private val cancelHolds = mutableListOf<() -> Unit>()
 
     val districtNames = arrayOf("الساحة المركزية", "تعز", "صنعاء", "إب", "عدن", "حضرموت", "الصحراء المفتوحة")
     private var lastDistrict = -1
 
     fun build(root: FrameLayout) {
         val d = UiKit.dp(act, 1f)
-        panel = FrameLayout(act)
+        panel = FrameLayout(act).apply { isMotionEventSplittingEnabled = true }
         panel.setOnApplyWindowInsetsListener { v, insets ->
             var l = insets.systemWindowInsetLeft
             var t = insets.systemWindowInsetTop
@@ -57,6 +60,12 @@ class HudUi(val act: Activity, val cb: Callbacks) {
             v.setPadding(l, t, r, b)
             insets
         }
+
+        // cockpit dashboard (interior camera)
+        cockpit = CockpitView(act)
+        cockpit.setFont(UiKit.fontBold)
+        cockpit.visibility = View.GONE
+        panel.addView(cockpit, UiKit.lp(-1, UiKit.dp(act, 220f), Gravity.BOTTOM))
 
         speedo = SpeedometerView(act)
         speedo.setFont(UiKit.fontBold)
@@ -112,7 +121,10 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         val srp = UiKit.lp(-2, -2, Gravity.BOTTOM or Gravity.LEFT)
         srp.setMargins(22 * d, 0, 0, 22 * d)
         panel.addView(steerRow, srp)
-        wheelView = SteerWheelView(act)
+        wheelView = SteerWheelView(act).apply {
+            tag = "steering_wheel"
+            contentDescription = "مقود القيادة"
+        }
         wheelView.onChange = { v -> wheelSteer = v; sendInput() }
         wheelView.visibility = View.GONE
         val wvp = UiKit.lp(UiKit.dp(act, 170f), UiKit.dp(act, 170f), Gravity.BOTTOM or Gravity.LEFT)
@@ -120,24 +132,29 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         panel.addView(wheelView, wvp)
 
         // pedals bottom-right
-        val pedalCol = UiKit.column(act)
+        val pedalCol = UiKit.column(act).apply { isMotionEventSplittingEnabled = true }
         val hb = holdButton("فرامل يد", 13f) { down -> handbrake = down; sendInput() }
-        pedalCol.addView(hb, UiKit.margins(UiKit.vlp(UiKit.dp(act, 220f), UiKit.dp(act, 38f)), 0, 0, 0, 8 * d))
-        val pedalRow = UiKit.row(act)
+        gearButton = UiKit.btn(act, "D", 16f).apply {
+            tag = "direction_gear"
+            contentDescription = "ناقل الحركة، القيادة للأمام"
+            setOnClickListener { cb.onGear() }
+        }
+        val brakeRow = UiKit.row(act).apply { isMotionEventSplittingEnabled = true }
+        brakeRow.addView(hb, UiKit.vlp(UiKit.dp(act, 154f), UiKit.dp(act, 48f)))
+        brakeRow.addView(gearButton, UiKit.margins(UiKit.vlp(UiKit.dp(act, 58f), UiKit.dp(act, 48f)),
+            8 * d, 0, 0, 0))
+        pedalCol.addView(brakeRow, UiKit.margins(UiKit.vlp(-2, -2), 0, 0, 0, 8 * d))
+        val pedalRow = UiKit.row(act).apply { isMotionEventSplittingEnabled = true }
         val brk = holdButton("فرامل", 15f) { down -> brake = if (down) 1f else 0f; sendInput() }
         val gas = holdButton("وقود", 15f) { down -> throttle = if (down) 1f else 0f; sendInput() }
+        brk.tag = "brake"
+        gas.tag = "throttle"
         pedalRow.addView(brk, UiKit.margins(UiKit.vlp(UiKit.dp(act, 106f), UiKit.dp(act, 110f)), 4 * d, 0, 4 * d, 0))
         pedalRow.addView(gas, UiKit.margins(UiKit.vlp(UiKit.dp(act, 106f), UiKit.dp(act, 110f)), 4 * d, 0, 4 * d, 0))
         pedalCol.addView(pedalRow)
         val pcp = UiKit.lp(-2, -2, Gravity.BOTTOM or Gravity.RIGHT)
         pcp.setMargins(0, 0, 22 * d, 22 * d)
         panel.addView(pedalCol, pcp)
-
-        // cockpit dashboard (interior camera)
-        cockpit = CockpitView(act)
-        cockpit.setFont(UiKit.fontBold)
-        cockpit.visibility = View.GONE
-        panel.addView(cockpit, UiKit.lp(-1, UiKit.dp(act, 220f), Gravity.BOTTOM))
 
         // horn + lights (left of the pedals)
         val miscRow = UiKit.row(act)
@@ -155,21 +172,46 @@ class HudUi(val act: Activity, val cb: Callbacks) {
     }
 
     private fun holdButton(text: String, sizeSp: Float, onHold: (Boolean) -> Unit): View {
-        val b = UiKit.btn(act, text, sizeSp)
-        b.setOnTouchListener { _, ev ->
-            when (ev.actionMasked) {
-                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> { onHold(true); true }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL, MotionEvent.ACTION_POINTER_UP -> { onHold(false); true }
-                else -> true
-            }
+        val button = UiKit.btn(act, text, sizeSp)
+        var pointer = MotionEvent.INVALID_POINTER_ID
+        fun release() {
+            pointer = MotionEvent.INVALID_POINTER_ID
+            button.isPressed = false
         }
-        return b
+        cancelHolds.add(::release)
+        button.setOnTouchListener { _, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                    if (pointer == MotionEvent.INVALID_POINTER_ID) {
+                        pointer = event.getPointerId(event.actionIndex)
+                        button.isPressed = true
+                        onHold(true)
+                    }
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                    if (event.getPointerId(event.actionIndex) == pointer) {
+                        release()
+                        onHold(false)
+                        if (event.actionMasked == MotionEvent.ACTION_UP) button.performClick()
+                    }
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    if (pointer != MotionEvent.INVALID_POINTER_ID) {
+                        release()
+                        onHold(false)
+                    }
+                }
+            }
+            true
+        }
+        return button
     }
 
     fun setSteerWheel(on: Boolean) {
+        if (wheelMode != on) resetInput()
         wheelMode = on
-        if (::wheelView.isInitialized) wheelView.visibility = if (on) View.VISIBLE else View.GONE
-        if (::steerRow.isInitialized) steerRow.visibility = if (on) View.GONE else View.VISIBLE
+        wheelView.visibility = if (on) View.VISIBLE else View.GONE
+        steerRow.visibility = if (on) View.GONE else View.VISIBLE
     }
 
     private fun sendInput() {
@@ -195,12 +237,26 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         }
     }
 
+    fun setReverse(reverse: Boolean) {
+        val label = if (reverse) "R" else "D"
+        if (gearButton.text == label) return
+        gearButton.text = label
+        gearButton.contentDescription = if (reverse) "ناقل الحركة، الرجوع للخلف" else "ناقل الحركة، القيادة للأمام"
+    }
+
     fun setDashboard(visible: Boolean) {
         cockpit.visibility = if (visible) View.VISIBLE else View.GONE
     }
 
     fun resetInput() {
-        throttle = 0f; brake = 0f; steerL = false; steerR = false; handbrake = false
+        cancelHolds.forEach { it() }
+        wheelView.reset()
+        throttle = 0f
+        brake = 0f
+        steerL = false
+        steerR = false
+        wheelSteer = 0f
+        handbrake = false
         sendInput()
     }
 }

@@ -13,6 +13,23 @@ GLuint* texIds() { static GLuint t[12] = {0}; return t; }
 std::string& glErrorLog() { static std::string e; return e; }
 
 
+void Game::resetGraphics() {
+    prog = Program{};
+    glErrorLog().clear();
+    for (int slot = 0; slot < 12; ++slot) texIds()[slot] = 0;
+    for (GLMesh* mesh : {&ground, &farRing, &sky, &mountains, &canyon, &roadMesh, &props,
+                        &bldgShadow, &palms, &starsMesh, &ringMesh, &beaconMesh, &cloudMesh,
+                        &sunMesh, &shadowMesh, &carBody, &carGlass, &carTrim, &carLights,
+                        &carTire, &carRim, &carSpoiler, &carNeon, &parkedGlass, &particles}) {
+        *mesh = GLMesh{};
+    }
+    for (auto& mesh : bldgMesh) mesh = GLMesh{};
+    for (auto& mesh : parkedBody) mesh = GLMesh{};
+    carModel.resetGraphics();
+    parkedModel.resetGraphics();
+    sceneBuilt = false;
+    carDirty = true;
+}
 
 // ---------- physics ----------
 void spawnDust(int n, float r, float g, float b);
@@ -67,7 +84,7 @@ void stepPhysics(float dt) {
         G.shiftCut -= dt;
         if (G.shiftCut <= 0.f) { G.gear = G.pendingGear; G.pendingGear = 0; }
     }
-    if (G.shiftTimer <= 0.f && G.inThrottle > 0.05f) {
+    if (!G.reverse && G.shiftTimer <= 0.f && G.inThrottle > 0.05f) {
         auto accelIn = [&](int g) {
             float loG = g > 1 ? TOPS[g - 1] * 0.55f : 0.f;
             float bandG = TOPS[g] - loG + 0.001f;
@@ -99,27 +116,27 @@ void stepPhysics(float dt) {
     float tracLim = surfGrip * (G.driveMode >= 1 ? 12.0f : 8.6f);
     if (accel > tracLim) { G.slipT = fminf(1.f, (accel - tracLim) / (accel + 0.01f)); accel = tracLim; }
     else G.slipT = fmaxf(0.f, G.slipT - dt * 4.f);
-    float drag = surfRoll + fabsf(speed) * 0.012f + (G.inThrottle < 0.05f ? 0.45f + (6 - G.gear) * 0.10f : 0.f); // engine braking
-    if (G.inBrake > 0) {
-        float want = G.inBrake * (speed > 0.6f ? 14.f : 6.5f);
-        float brakeLim = surfGrip * 13.5f;
-        if (want > brakeLim) { G.slipB = fminf(1.f, (want - brakeLim) / (want + 0.01f)); want = brakeLim; } // ABS
-        else G.slipB = fmaxf(0.f, G.slipB - dt * 4.f);
-        accel -= want;
-    }
-    speed += (accel - drag * (speed > 0 ? 1 : (speed < 0 ? -1 : 0))) * dt;
-    float top = TOPS[6] * (low ? 0.55f : 1.f) * dmgP, rtop = -9.f;
-    if (speed > top) speed = top;
-    if (speed < rtop) speed = rtop;
-    if (fabsf(speed) < 0.15f && G.inThrottle == 0 && G.inBrake == 0) speed = 0;
-    // damaged steering pull
-    if (G.damage > 60) G.steer += (G.damage - 60) * 0.0006f;
-    // fuel + engine temperature
+    // Fuel and heat affect available engine force before integrating velocity.
     G.fuel = fmaxf(0.f, G.fuel - dt * (0.05f + G.inThrottle * 0.22f + G.rpm * 0.08f));
-    if (G.fuel <= 0.f) accel *= 0.2f; // limp home on empty
-    float tempTarget = 62.f + G.rpm * 48.f;
+    if (G.fuel <= 0.f) accel *= 0.2f;
+    const float tempTarget = 62.f + G.rpm * 48.f;
     G.engineTemp += (tempTarget - G.engineTemp) * fminf(1.f, dt * 0.06f);
-    if (G.engineTemp > 108.f) accel *= 0.75f; // heat soak
+    if (G.engineTemp > 108.f) accel *= 0.75f;
+
+    const float drag = surfRoll + fabsf(speed) * 0.012f +
+        (G.inThrottle < 0.05f ? 0.45f + (6 - G.gear) * 0.10f : 0.f);
+    const float brakeDemand = G.inBrake * 14.f;
+    const float brakeForce = fminf(brakeDemand, surfGrip * 13.5f);
+    const float handbrakeForce = G.inHandbrake ? surfGrip * 5.f : 0.f;
+    G.slipB = brakeDemand > brakeForce
+        ? (brakeDemand - brakeForce) / brakeDemand : fmaxf(0.f, G.slipB - dt * 4.f);
+
+    const float drivenSpeed = speed + (G.reverse ? -accel : accel) * dt;
+    const float resistedSpeed = fmaxf(0.f, fabsf(drivenSpeed) - (drag + brakeForce + handbrakeForce) * dt);
+    const float top = TOPS[6] * (low ? 0.55f : 1.f) * dmgP;
+    speed = fmaxf(-9.f, fminf(top, copysignf(resistedSpeed, drivenSpeed)));
+
+    if (G.damage > 60) G.steer += (G.damage - 60) * 0.0006f;
 
     // yaw
     float yaw = speed / 2.7f * tanf(G.steer);

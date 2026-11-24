@@ -10,6 +10,8 @@ static const V3 SUN = {0.45f, 0.55f, -0.35f};
 struct Particle { V3 pos, vel; float life, maxLife, size; float r, g, b, a; };
 
 struct Game {
+    void resetGraphics();
+
     World world;
     // GL
     Program prog;
@@ -42,6 +44,7 @@ struct Game {
     // phase B: drivetrain + damage simulation
     float rpm = 0.12f;      // normalized 0..1
     int gear = 1;           // 1..6 automatic
+    bool reverse = false;
     float damage = 0;       // 0..100
     float slipT = 0, slipB = 0; // TC / ABS intervention indicators
     int driveMode = 0;      // 0 RWD, 1 AWD, 2 4L low-range

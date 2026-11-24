@@ -8,16 +8,13 @@ struct CarPart {
     std::string name;
     int flags = 0;      // 1=glass 2=lights 4=paint 8=wing
     V3 pivot = {0,0,0};
-    MeshData cpu;       // kept until uploaded
-    std::vector<unsigned> idx;
+    MeshData cpu;       // retained so a new EGL context can re-upload the model
     GLMesh gpu;
-    bool uploaded = false;
 };
 
 struct CarModel {
     CarPart parts[12];
     int partCount = 0;
-    std::vector<unsigned char> pending; // raw bytes if load called before GL
     bool loaded = false;   // CPU parse ok
     bool glReady = false;  // uploaded
 
@@ -65,14 +62,15 @@ struct CarModel {
         return true;
     }
 
+    void resetGraphics() {
+        for (int i = 0; i < partCount; ++i) parts[i].gpu = GLMesh{};
+        glReady = false;
+    }
+
     // upload to GL (call with a current GL context)
     void upload() {
         if (!loaded || glReady) return;
-        for (int i = 0; i < partCount; i++) {
-            parts[i].gpu.upload(parts[i].cpu);
-            parts[i].uploaded = true;
-            parts[i].cpu.v.clear(); parts[i].cpu.v.shrink_to_fit();
-        }
+        for (int i = 0; i < partCount; i++) parts[i].gpu.upload(parts[i].cpu);
         glReady = true;
     }
 };

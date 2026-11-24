@@ -1,38 +1,44 @@
 // Sayyaratak JNI bridge.
 #include <jni.h>
 #include <android/log.h>
+#include <cstdint>
 #include <cstring>
 #include "game.h"
 
-static long lastNs = 0;
-static long nowNs() {
+static int64_t lastNs = 0;
+static int64_t nowNs() {
     timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
-    return ts.tv_sec * 1000000000L + ts.tv_nsec;
+    return int64_t(ts.tv_sec) * 1000000000 + ts.tv_nsec;
 }
 
 extern "C" {
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeInit(JNIEnv*, jclass) {
+    G = Game{};
+    lastNs = 0;
     G.world.gen();
     V3 s = G.world.spawnFor(0);
     G.pos = s;
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSurfaceCreated(JNIEnv*, jclass) {
-    if (!G.prog.id) {
-        G.prog.build();
-        buildScene();
-        G.carDirty = true;
-    }
-    audioStart();
+    // Android calls this when the EGL context is created, including after context loss.
+    // Previous GL names belong to the old context. Forget them without deleting them here.
+    G.resetGraphics();
+    lastNs = 0;
+    if (G.prog.build()) buildScene();
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSurfaceChanged(JNIEnv*, jclass, jint w, jint h) {
     G.scrW = w; G.scrH = h;
 }
 
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeResetClock(JNIEnv*, jclass) {
+    lastNs = 0;
+}
+
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeDrawFrame(JNIEnv*, jclass) {
-    long now = nowNs();
+    int64_t now = nowNs();
     float dt = lastNs ? (now - lastNs) / 1e9f : 0.016f;
     lastNs = now;
     if (dt > 0.05f) dt = 0.05f;
@@ -42,7 +48,7 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeDrawFrame(JNIEnv*,
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeGetState(JNIEnv* env, jclass, jfloatArray out) {
-    float s[22] = {0};
+    float s[29] = {0};
     float fwdX = sinf(G.heading), fwdZ = cosf(G.heading);
     s[0] = fabsf(G.vx * fwdX + G.vz * fwdZ) * 3.6f;   // speed km/h
     s[1] = G.score;
@@ -66,11 +72,27 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeGetState(JNIEnv* e
     s[19] = (float)G.driveMode;
     s[20] = G.fuel;
     s[21] = G.engineTemp;
-    env->SetFloatArrayRegion(out, 0, 22, s);
+    s[22] = G.pos.x;
+    s[23] = G.pos.z;
+    s[24] = G.heading;
+    s[25] = G.inThrottle;
+    s[26] = G.inBrake;
+    s[27] = G.inSteer;
+    s[28] = G.reverse ? 1.f : 0.f;
+    env->SetFloatArrayRegion(out, 0, sizeof(s) / sizeof(s[0]), s);
 }
 
 JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeSetInput(JNIEnv*, jclass, jfloat t, jfloat b, jfloat s, jboolean hb) {
     G.inThrottle = t; G.inBrake = b; G.inSteer = s; G.inHandbrake = hb;
+}
+
+JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeToggleReverse(JNIEnv*, jclass) {
+    if (G.mode < 2 || hypotf(G.vx, G.vz) >= 0.5f || G.inThrottle > 0.05f) return;
+    G.reverse = !G.reverse;
+    G.gear = 1;
+    G.pendingGear = 0;
+    G.shiftTimer = 0.f;
+    G.shiftCut = 0.f;
 }
 
 JNIEXPORT jint JNICALL Java_com_sayyaratak_NativeBridge_nativeCycleCamera(JNIEnv*, jclass) {
@@ -155,7 +177,10 @@ JNIEXPORT void JNICALL Java_com_sayyaratak_NativeBridge_nativeGarageRotate(JNIEn
 }
 
 JNIEXPORT jstring JNICALL Java_com_sayyaratak_NativeBridge_nativeGetGlError(JNIEnv* env, jclass) {
-    return env->NewStringUTF(glErrorLog().c_str());
+    std::string error = glErrorLog();
+    const GLenum code = glGetError();
+    if (code != GL_NO_ERROR) error += "OpenGL error: " + std::to_string(code);
+    return env->NewStringUTF(error.c_str());
 }
 
 JNIEXPORT jstring JNICALL Java_com_sayyaratak_NativeBridge_nativeGetGlInfo(JNIEnv* env, jclass) {

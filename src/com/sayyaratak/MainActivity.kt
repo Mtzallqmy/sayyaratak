@@ -6,9 +6,12 @@ import android.graphics.Typeface
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
@@ -26,7 +29,21 @@ class MainActivity : Activity() {
     private lateinit var settings: SettingsUi
     private lateinit var hud: HudUi
     private val handler = Handler(Looper.getMainLooper())
-    private val state = FloatArray(22)
+    private val state = FloatArray(NativeBridge.STATE_SIZE)
+    private val renderState = FloatArray(NativeBridge.STATE_SIZE)
+    private val renderLock = Any()
+    private var sceneGeneration = 0
+    private var frameSample = 0
+    private var nextSampleAt = 0L
+    private var initialized = false
+    @Volatile internal var isDrivingActivityResumed = false
+        private set
+
+    internal data class DriveSample(val generation: Int, val frame: Int, val state: FloatArray)
+
+    internal fun driveSample(): DriveSample = synchronized(renderLock) {
+        DriveSample(sceneGeneration, frameSample, renderState.copyOf())
+    }
     private var mode = NativeBridge.MODE_MENU
     private var lightsOn = false
     private var challengeEnded = false
@@ -41,13 +58,13 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         ErrorTrap.install(this)
         try {
-            onCreateSafe(savedInstanceState)
+            onCreateSafe()
         } catch (e: Throwable) {
             ErrorTrap.show(this, "تعذّر بدء اللعبة", ErrorTrap.stackOf(e))
         }
     }
 
-    private fun onCreateSafe(savedInstanceState: Bundle?) {
+    private fun onCreateSafe() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         hideSystemUi()
 
@@ -61,45 +78,60 @@ class MainActivity : Activity() {
 
         try {
             NativeBridge.nativeInit()
-        try {
-            val hero = assets.open("models/car.bin").readBytes()
-            val lod = assets.open("models/car_lod.bin").readBytes()
-            NativeBridge.nativeLoadModel(hero, lod)
-        } catch (t: Throwable) { /* fall back to procedural car */ }
+            try {
+                val hero = assets.open("models/car.bin").use { it.readBytes() }
+                val lod = assets.open("models/car_lod.bin").use { it.readBytes() }
+                NativeBridge.nativeLoadModel(hero, lod)
+            } catch (e: java.io.IOException) {
+                Log.w("sayya", "Bundled car model unavailable; using procedural mesh", e)
+            }
         } catch (e: Throwable) {
             ErrorTrap.show(this, "تعذّر تحميل محرك اللعبة", ErrorTrap.stackOf(e))
             return
         }
 
-        root = FrameLayout(this)
-        glView = GLSurfaceView(this)
+        root = FrameLayout(this).apply { isMotionEventSplittingEnabled = true }
+        glView = GLSurfaceView(this).apply { tag = "driving_surface" }
         glView.setEGLContextClientVersion(3)
         glView.setEGLConfigChooser(MsaaChooser())
         glView.preserveEGLContextOnPause = true
         glView.setRenderer(object : GLSurfaceView.Renderer {
             override fun onSurfaceCreated(unused: GL10?, config: EGLConfig?) {
+                frameFailed = false
                 try {
+                    val info = NativeBridge.nativeGetGlInfo()
+                    Log.i("sayya", "EGL context: $info")
                     NativeBridge.nativeSurfaceCreated()
+                    val error = NativeBridge.nativeGetGlError()
+                    check(error.isEmpty()) { "$error\n$info" }
                     uploadTextures()
-                    val glErr = NativeBridge.nativeGetGlError()
-                    if (glErr.isNotEmpty()) {
-                        val info = NativeBridge.nativeGetGlInfo()
-                        runOnUiThread { ErrorTrap.show(this@MainActivity, "تعذّر تجهيز الرسوم (صوّر الشاشة)", glErr + "\n" + info) }
-                    }
+                    val textureError = NativeBridge.nativeGetGlError()
+                    check(textureError.isEmpty()) { "$textureError\n$info" }
+                    synchronized(renderLock) { sceneGeneration++ }
+                    nextSampleAt = 0L
                 } catch (e: Throwable) {
-                    runOnUiThread { ErrorTrap.show(this@MainActivity, "خطأ في الرسوم", ErrorTrap.stackOf(e)) }
+                    reportFrameFailure("خطأ في الرسوم", e)
                 }
             }
+
             override fun onSurfaceChanged(unused: GL10?, w: Int, h: Int) {
                 NativeBridge.nativeSurfaceChanged(w, h)
             }
+
             override fun onDrawFrame(unused: GL10?) {
                 if (frameFailed) return
                 try {
                     NativeBridge.nativeDrawFrame()
+                    val now = SystemClock.uptimeMillis()
+                    if (now >= nextSampleAt) {
+                        synchronized(renderLock) {
+                            NativeBridge.nativeGetState(renderState)
+                            frameSample++
+                        }
+                        nextSampleAt = now + 50
+                    }
                 } catch (e: Throwable) {
-                    frameFailed = true
-                    runOnUiThread { ErrorTrap.show(this@MainActivity, "خطأ أثناء الرسم", ErrorTrap.stackOf(e)) }
+                    reportFrameFailure("خطأ أثناء الرسم", e)
                 }
             }
         })
@@ -115,10 +147,11 @@ class MainActivity : Activity() {
                 glView.queueEvent { NativeBridge.nativeSetInput(t, b, s, hb) }
             }
             override fun onCamera() { glView.queueEvent { NativeBridge.nativeCycleCamera() } }
+            override fun onGear() { glView.queueEvent { NativeBridge.nativeToggleReverse() } }
             override fun onExitToMenu() { showMenu() }
         })
         hud.build(root)
-        hud.setSteerWheel(prefs.getBoolean("steerwheel", false))
+        hud.setSteerWheel(prefs.getBoolean("steerwheel", true))
 
         menu = MenuUi(this, object : MenuUi.Callbacks {
             override fun onStartDrive(district: Int) { startDrive(district) }
@@ -226,8 +259,7 @@ class MainActivity : Activity() {
         root.setOnApplyWindowInsetsListener { v, ins ->
             var l = ins.systemWindowInsetLeft; var t = ins.systemWindowInsetTop
             var r = ins.systemWindowInsetRight; var b = ins.systemWindowInsetBottom
-            val cut = ins.displayCutout
-            if (cut != null) {
+            if (Build.VERSION.SDK_INT >= 28) ins.displayCutout?.let { cut ->
                 l = maxOf(l, cut.safeInsetLeft); t = maxOf(t, cut.safeInsetTop)
                 r = maxOf(r, cut.safeInsetRight); b = maxOf(b, cut.safeInsetBottom)
             }
@@ -254,14 +286,20 @@ class MainActivity : Activity() {
 
         applyPrefs()
         showMenu()
-        handler.post(hudTick)
+        initialized = true
+    }
+
+    private fun reportFrameFailure(title: String, failure: Throwable) {
+        frameFailed = true
+        Log.e("sayya", title, failure)
+        runOnUiThread { if (!isFinishing && !isDestroyed) ErrorTrap.show(this, title, ErrorTrap.stackOf(failure)) }
     }
 
     private fun applyPrefs() {
         val r = prefs.getFloat("pr", 0.62f); val g = prefs.getFloat("pg", 0.05f); val b = prefs.getFloat("pb", 0.06f)
         workshop.syncState(prefs.getBoolean("spoiler", true), prefs.getBoolean("neon", false), prefs.getBoolean("tint", true))
         settings.sync(prefs.getInt("quality", 1), prefs.getBoolean("audio", true), prefs.getInt("camera", 0))
-        settings.syncWheel(prefs.getBoolean("steerwheel", false))
+        settings.syncWheel(prefs.getBoolean("steerwheel", true))
         glView.queueEvent {
             NativeBridge.nativeSetPaint(r, g, b)
             NativeBridge.nativeSetWheels(prefs.getInt("wheels", 0))
@@ -388,7 +426,8 @@ class MainActivity : Activity() {
     private val hudTick = object : Runnable {
         override fun run() {
             try {
-            NativeBridge.nativeGetState(state)
+            synchronized(renderLock) { renderState.copyInto(state) }
+            if (mode >= NativeBridge.MODE_FREE) hud.setReverse(state[NativeBridge.ST_REVERSE] == 1f)
             if (mode == NativeBridge.MODE_MISSION) {
                 hud.speedo.kmh = state[NativeBridge.ST_SPEED]
                 hud.speedo.invalidate()
@@ -400,6 +439,7 @@ class MainActivity : Activity() {
                 val rp = state[NativeBridge.ST_RPMGEAR]
                 cp.rpm01 = kotlin.math.floor(rp) / 10f
                 cp.gear = ((rp - kotlin.math.floor(rp)) * 100f + 0.5f).toInt()
+                cp.reverse = state[NativeBridge.ST_REVERSE] == 1f
                 cp.steer = state[NativeBridge.ST_STEER] / 100f
                 cp.fuel = state[NativeBridge.ST_FUEL]
                 cp.temp = state[NativeBridge.ST_TEMP]
@@ -440,6 +480,7 @@ class MainActivity : Activity() {
                 val rp = state[NativeBridge.ST_RPMGEAR]
                 cp.rpm01 = kotlin.math.floor(rp) / 10f
                 cp.gear = ((rp - kotlin.math.floor(rp)) * 100f + 0.5f).toInt()
+                cp.reverse = state[NativeBridge.ST_REVERSE] == 1f
                 cp.steer = state[NativeBridge.ST_STEER] / 100f
                 cp.fuel = state[NativeBridge.ST_FUEL]
                 cp.temp = state[NativeBridge.ST_TEMP]
@@ -487,43 +528,52 @@ class MainActivity : Activity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) hideSystemUi()
+        if (hasFocus) hideSystemUi() else if (initialized) hud.resetInput()
     }
 
     override fun onPause() {
         super.onPause()
+        isDrivingActivityResumed = false
+        if (!initialized) return
+        handler.removeCallbacks(hudTick)
+        hud.resetInput()
         glView.onPause()
         NativeBridge.nativePauseAudio()
     }
 
     override fun onResume() {
         super.onResume()
+        if (!initialized) return
+        glView.queueEvent { NativeBridge.nativeResetClock() }
         glView.onResume()
         NativeBridge.nativeResumeAudio()
         hideSystemUi()
+        isDrivingActivityResumed = true
+        handler.post(hudTick)
     }
 
     override fun onBackPressed() {
-        if (mode != NativeBridge.MODE_MENU) showMenu() else super.onBackPressed()
+        if (initialized && mode != NativeBridge.MODE_MENU) showMenu() else super.onBackPressed()
     }
 
     private class MsaaChooser : GLSurfaceView.EGLConfigChooser {
         override fun chooseConfig(egl: EGL10, display: EGLDisplay): EGLConfig {
+            val eglOpenGles3Bit = 0x0040
             val configs = arrayOfNulls<EGLConfig>(1)
-            val num = IntArray(1)
-            val spec = intArrayOf(
-                EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8,
-                EGL10.EGL_ALPHA_SIZE, 8, EGL10.EGL_DEPTH_SIZE, 16,
-                EGL10.EGL_RENDERABLE_TYPE, 4,
-                EGL10.EGL_SAMPLE_BUFFERS, 1, EGL10.EGL_SAMPLES, 4,
-                EGL10.EGL_NONE)
-            if (egl.eglChooseConfig(display, spec, configs, 1, num) && num[0] > 0) return configs[0]!!
-            // fallback without MSAA
-            val spec2 = intArrayOf(
-                EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8,
-                EGL10.EGL_DEPTH_SIZE, 16, EGL10.EGL_RENDERABLE_TYPE, 4, EGL10.EGL_NONE)
-            egl.eglChooseConfig(display, spec2, configs, 1, num)
-            return configs[0]!!
+            val count = IntArray(1)
+            for ((depth, samples) in listOf(24 to 4, 24 to 0, 16 to 0)) {
+                val attributes = intArrayOf(
+                    EGL10.EGL_RED_SIZE, 8, EGL10.EGL_GREEN_SIZE, 8, EGL10.EGL_BLUE_SIZE, 8,
+                    EGL10.EGL_DEPTH_SIZE, depth, EGL10.EGL_RENDERABLE_TYPE, eglOpenGles3Bit,
+                    EGL10.EGL_SURFACE_TYPE, EGL10.EGL_WINDOW_BIT,
+                    EGL10.EGL_SAMPLE_BUFFERS, if (samples > 0) 1 else 0,
+                    EGL10.EGL_SAMPLES, samples, EGL10.EGL_NONE
+                )
+                if (egl.eglChooseConfig(display, attributes, configs, 1, count) && count[0] > 0) {
+                    requireNotNull(configs[0]).let { return it }
+                }
+            }
+            error("No OpenGL ES 3 window configuration with a depth buffer")
         }
     }
 }
