@@ -88,14 +88,13 @@ jobs:
             W=$(echo $WH | cut -d' ' -f1)
             H=$(echo $WH | cut -d' ' -f2)
             echo "screen: ${W}x${H}"
-            tap_text() { python3 scripts/tap_text.py "$1"; }
             # dismiss the system immersive dialog; retry while it re-appears
-            for i in 1 2 3 4 5; do tap_text "GOT IT" || break; sleep 1; done
+            for i in 1 2 3 4 5; do python3 scripts/tap_text.py "GOT IT" || break; sleep 1; done
             sleep 1
             adb shell screencap -p /sdcard/menu.png && adb pull /sdcard/menu.png shots/menu.png
             # start free drive by its real button text
-            tap_text "قيادة حرة"
-            for i in 1 2 3; do tap_text "GOT IT" || break; sleep 1; done
+            python3 scripts/tap_text.py "قيادة حرة"
+            for i in 1 2 3; do python3 scripts/tap_text.py "GOT IT" || break; sleep 1; done
             sleep 6
             adb shell screencap -p /sdcard/game1.png && adb pull /sdcard/game1.png shots/game1.png
             # hold gas (bottom-right pedal) with a long stationary swipe
