@@ -47,6 +47,7 @@ struct Game {
     int driveMode = 0;      // 0 RWD, 1 AWD, 2 4L low-range
     float fuel = 100;       // 0..100
     float shiftTimer = 0, engineTemp = 60;  // celsius-ish 40..115
+    float shiftCut = 0; int pendingGear = 0;  // Shift (MIT): torque-cut window + gear applied at cut end
     bool lightsOn = false;
     float paint[3] = {0.62f, 0.05f, 0.06f};
     int wheels = 0;

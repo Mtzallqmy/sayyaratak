@@ -60,6 +60,13 @@ void stepPhysics(float dt) {
     // compare wheel torque in adjacent gears; shift only when the other gear pulls
     // harder, with a 0.7 s cooldown between shifts.
     G.shiftTimer = fmaxf(0.f, G.shiftTimer - dt);
+    // Shift (MIT): during a shift the box cuts torque for 0.15-0.25s (natural
+    // variation), then the new ratio engages and rpm snaps to its new band.
+    if (G.pendingGear > 0) {
+        if (G.shiftCut <= 0.f) G.shiftCut = 0.15f + fmodf(G.time * 7.31f, 0.10f);
+        G.shiftCut -= dt;
+        if (G.shiftCut <= 0.f) { G.gear = G.pendingGear; G.pendingGear = 0; }
+    }
     if (G.shiftTimer <= 0.f && G.inThrottle > 0.05f) {
         auto accelIn = [&](int g) {
             float loG = g > 1 ? TOPS[g - 1] * 0.55f : 0.f;
@@ -70,11 +77,11 @@ void stepPhysics(float dt) {
         };
         float cur = accelIn(G.gear);
         if (G.gear < 6 && sp > TOPS[G.gear] * 0.96f) {
-            G.gear++; G.shiftTimer = 0.7f; // redline guard: always shift at the top
+            G.pendingGear = G.gear + 1; G.shiftTimer = 0.7f; // redline guard: always shift at the top
         } else if (G.gear < 6 && accelIn(G.gear + 1) > cur && sp > TOPS[G.gear] * 0.55f) {
-            G.gear++; G.shiftTimer = 0.7f;
+            G.pendingGear = G.gear + 1; G.shiftTimer = 0.7f;
         } else if (G.gear > 1 && accelIn(G.gear - 1) > cur * 1.05f && sp < TOPS[G.gear - 1] * 0.85f) {
-            G.gear--; G.shiftTimer = 0.7f;
+            G.pendingGear = G.gear - 1; G.shiftTimer = 0.7f;
         }
     }
     // rpm within the gear band + torque curve (peaks mid-band)
@@ -83,9 +90,11 @@ void stepPhysics(float dt) {
     float rpmT = fminf(1.f, fmaxf(0.f, (sp - lo) / band));
     float rpmTarget = G.inThrottle > 0.05f ? 0.22f + 0.78f * rpmT : fmaxf(0.12f, 0.22f + 0.78f * rpmT * 0.6f);
     G.rpm += (rpmTarget - G.rpm) * fminf(1.f, dt * 6.f);
+    if (G.pendingGear > 0) G.rpm += (0.16f - G.rpm) * fminf(1.f, dt * 14.f); // clutch in: revs fall
     float tq = 0.60f + 0.55f * sinf(fminf(1.f, G.rpm) * 2.4f);
     // requested engine accel
     float accel = G.inThrottle * 12.5f * tq * GMUL[G.gear] * dmgP * (low ? 1.9f : 1.f);
+    if (G.pendingGear > 0) accel = 0.f; // Shift: gearbox transmits no torque mid-shift
     // traction limit: RWD lower than AWD/4L; TC clamps and flags
     float tracLim = surfGrip * (G.driveMode >= 1 ? 12.0f : 8.6f);
     if (accel > tracLim) { G.slipT = fminf(1.f, (accel - tracLim) / (accel + 0.01f)); accel = tracLim; }
