@@ -6,6 +6,7 @@ import android.graphics.Typeface
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.opengl.GLSurfaceView
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -258,8 +259,7 @@ class MainActivity : Activity() {
         root.setOnApplyWindowInsetsListener { v, ins ->
             var l = ins.systemWindowInsetLeft; var t = ins.systemWindowInsetTop
             var r = ins.systemWindowInsetRight; var b = ins.systemWindowInsetBottom
-            val cut = ins.displayCutout
-            if (cut != null) {
+            if (Build.VERSION.SDK_INT >= 28) ins.displayCutout?.let { cut ->
                 l = maxOf(l, cut.safeInsetLeft); t = maxOf(t, cut.safeInsetTop)
                 r = maxOf(r, cut.safeInsetRight); b = maxOf(b, cut.safeInsetBottom)
             }
