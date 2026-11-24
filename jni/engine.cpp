@@ -486,7 +486,11 @@ void drawFrame(float dt) {
     // moving traffic
     if (G.parkedModel.glReady) {
         for (auto& tc : G.world.traffic) {
-            M4 m = M4::mul(M4::translate(tc.x, 0, tc.z), M4::rotY(tc.heading));
+            // body variants: same LOD mesh, different proportions (sedan / SUV / coupe)
+            int variant = tc.colorIdx % 3;
+            float vsc = variant == 1 ? 1.14f : variant == 2 ? 0.92f : 1.f; // uniform: wheels stay round, ground contact exact
+            M4 m = M4::mul(M4::translate(tc.x, 0, tc.z),
+                     M4::mul(M4::rotY(tc.heading), M4::scale(vsc, vsc, vsc)));
             M4 pmvp = M4::mul(vp, m);
             const float* pc3 = PAINTS[tc.colorIdx];
             for (int pi = 0; pi < G.parkedModel.partCount; pi++) {
