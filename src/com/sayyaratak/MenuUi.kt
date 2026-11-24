@@ -47,7 +47,7 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         statsText.setPadding(0, 0, 0, 12 * d)
         panel.addView(statsText)
 
-        val b1 = UiKit.btn(act, "قيادة حرة", 17f, true)
+        val b1 = UiKit.btn(act, "قيادة حرة", 17f, true).apply { tag = "free_drive" }
         val b2 = UiKit.btn(act, "تحدي السرعة", 17f)
         val b5 = UiKit.btn(act, "المهام", 17f)
         val b3 = UiKit.btn(act, "الورشة", 17f)

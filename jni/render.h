@@ -88,7 +88,11 @@ struct Program {
     bool build() {
         GLuint vs = compile(GL_VERTEX_SHADER, VS);
         GLuint fs = compile(GL_FRAGMENT_SHADER, FS);
-        if (!vs || !fs) return false;
+        if (!vs || !fs) {
+            if (vs) glDeleteShader(vs);
+            if (fs) glDeleteShader(fs);
+            return false;
+        }
         id = glCreateProgram();
         glAttachShader(id, vs); glAttachShader(id, fs);
         glLinkProgram(id);
@@ -98,6 +102,8 @@ struct Program {
             char buf[1024]; GLsizei n = 0;
             glGetProgramInfoLog(id, sizeof(buf), &n, buf);
             glErrorLog().append("link: ").append(buf, n).append("\n");
+            glDeleteProgram(id);
+            id = 0;
             return false;
         }
         uMVP = glGetUniformLocation(id, "uMVP"); uModel = glGetUniformLocation(id, "uModel");
@@ -174,12 +180,8 @@ static void uploadTex(int slot, const int* px, int w, int h, bool mip) {
     if (mip) {
         glGenerateMipmap(GL_TEXTURE_2D);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-        static int aniso = -1;
-        if (aniso < 0) {
-            const char* ext = (const char*)glGetString(GL_EXTENSIONS);
-            aniso = (ext && strstr(ext, "texture_filter_anisotropic")) ? 1 : 0;
-        }
-        if (aniso) {
+        const char* extensions = (const char*)glGetString(GL_EXTENSIONS);
+        if (extensions && strstr(extensions, "texture_filter_anisotropic")) {
             float mx = 4.f;
             glGetFloatv(0x84FF /*GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT*/, &mx);
             if (mx > 8.f) mx = 8.f;
