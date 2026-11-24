@@ -232,6 +232,7 @@ class MainActivity : Activity() {
                 r = maxOf(r, cut.safeInsetRight); b = maxOf(b, cut.safeInsetBottom)
             }
             v.setPadding(l, t, r, b)
+            (v as? android.view.ViewGroup)?.clipToPadding = false
             ins
         }
         ErrorTrap.showPreviousIfAny(this, root)

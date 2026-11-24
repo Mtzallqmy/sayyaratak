@@ -122,12 +122,12 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         // pedals bottom-right
         val pedalCol = UiKit.column(act)
         val hb = holdButton("فرامل يد", 13f) { down -> handbrake = down; sendInput() }
-        pedalCol.addView(hb, UiKit.margins(UiKit.vlp(UiKit.dp(act, 130f), UiKit.dp(act, 40f)), 0, 0, 0, 8 * d))
+        pedalCol.addView(hb, UiKit.margins(UiKit.vlp(UiKit.dp(act, 220f), UiKit.dp(act, 38f)), 0, 0, 0, 8 * d))
         val pedalRow = UiKit.row(act)
         val brk = holdButton("فرامل", 15f) { down -> brake = if (down) 1f else 0f; sendInput() }
         val gas = holdButton("وقود", 15f) { down -> throttle = if (down) 1f else 0f; sendInput() }
-        pedalRow.addView(brk, UiKit.margins(UiKit.vlp(UiKit.dp(act, 96f), UiKit.dp(act, 110f)), 6 * d, 0, 6 * d, 0))
-        pedalRow.addView(gas, UiKit.margins(UiKit.vlp(UiKit.dp(act, 96f), UiKit.dp(act, 110f)), 6 * d, 0, 6 * d, 0))
+        pedalRow.addView(brk, UiKit.margins(UiKit.vlp(UiKit.dp(act, 106f), UiKit.dp(act, 110f)), 4 * d, 0, 4 * d, 0))
+        pedalRow.addView(gas, UiKit.margins(UiKit.vlp(UiKit.dp(act, 106f), UiKit.dp(act, 110f)), 4 * d, 0, 4 * d, 0))
         pedalCol.addView(pedalRow)
         val pcp = UiKit.lp(-2, -2, Gravity.BOTTOM or Gravity.RIGHT)
         pcp.setMargins(0, 0, 22 * d, 22 * d)
@@ -151,7 +151,7 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         panel.addView(miscRow, mrp)
 
         panel.visibility = View.GONE
-        root.addView(panel)
+        root.addView(panel, UiKit.lp(-1, -1, 0))
     }
 
     private fun holdButton(text: String, sizeSp: Float, onHold: (Boolean) -> Unit): View {

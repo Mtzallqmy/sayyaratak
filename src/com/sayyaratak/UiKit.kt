@@ -40,8 +40,11 @@ object UiKit {
         g.cornerRadius = dp(a, 14f).toFloat()
         g.setStroke(dp(a, 1f), if (accent) Color.rgb(255, 230, 160) else Color.argb(90, 255, 255, 255))
         b.background = g
-        b.setPadding(dp(a, 18f), dp(a, 10f), dp(a, 18f), dp(a, 10f))
+        b.setPadding(dp(a, 8f), dp(a, 6f), dp(a, 8f), dp(a, 6f))
+        b.minWidth = 0; b.minimumWidth = 0
+        b.minHeight = 0; b.minimumHeight = 0
         b.isAllCaps = false
+        b.maxLines = 1
         return b
     }
 

@@ -24,6 +24,7 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         val d = UiKit.dp(act, 1f)
         panel = UiKit.column(act)
         panel.background = UiKit.panelBg(act)
+        panel.layoutParams = android.widget.FrameLayout.LayoutParams(-1, -2)
         panel.setPadding(34 * d, 26 * d, 34 * d, 26 * d)
 
         val title = UiKit.label(act, "سيارتك", 46f, UiKit.GOLD)
@@ -36,7 +37,7 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         val dev = UiKit.label(act, "برمجة وتطوير معتز العلقمي – تعز – اليمن – 2026م", 11f, Color.argb(120, 255, 255, 255))
         dev.setPadding(0, 0, 0, 10 * d)
         panel.addView(dev)
-        val cred = UiKit.label(act, "محرك وصوتيات مبنية على مشاريع مفتوحة المصدر (MIT/CC0) – القائمة الكاملة في THIRD_PARTY.md", 9f, Color.argb(100, 255, 255, 255))
+        val cred = UiKit.label(act, "مبنية على مشاريع مفتوحة المصدر (MIT/CC0)", 9f, Color.argb(100, 255, 255, 255))
         cred.setPadding(0, 0, 0, 10 * d)
         panel.addView(cred)
 
@@ -57,7 +58,7 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
         b3.setOnClickListener { cb.onOpenWorkshop() }
         b4.setOnClickListener { cb.onOpenSettings() }
         for (b in listOf(b1, b2, b5, b3, b4)) {
-            panel.addView(b, UiKit.margins(UiKit.vlp(UiKit.dp(act, 230f), UiKit.dp(act, 48f)), 0, 6 * d, 0, 6 * d))
+            panel.addView(b, UiKit.margins(UiKit.vlp(UiKit.dp(act, 230f), UiKit.dp(act, 46f)), 0, 5 * d, 0, 5 * d))
         }
 
         val go = UiKit.label(act, "انطلق مباشرة إلى:", 13f, Color.argb(200, 255, 255, 255))
@@ -76,17 +77,17 @@ class MenuUi(val act: Activity, val cb: Callbacks) {
 
         val scroll = android.widget.ScrollView(act)
         scroll.addView(panel)
-        val lp = UiKit.lp(-2, -2, Gravity.CENTER)
+        val lp = UiKit.lp(UiKit.dp(act, 340f), -1, Gravity.CENTER)
         root.addView(scroll, lp)
     }
 
     fun setProgress(balance: Int, level: Int) {
         if (::statsText.isInitialized) {
-            statsText.text = "المستوى $level   •   الرصيد: $balance"
+            statsText.text = "المستوى $level • الرصيد: $balance"
         }
     }
 
     fun setBest(stars: Int, best: Int, challengeBest: Int) {
-        bestText.text = "النجوم: $stars   •   أفضل انجراف: $best   •   أفضل تحدي: $challengeBest"
+        bestText.text = "النجوم: $stars • أفضل انجراف: $best • أفضل تحدي: $challengeBest"
     }
 }
