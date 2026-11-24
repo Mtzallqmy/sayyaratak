@@ -72,8 +72,8 @@ object WorldPainter {
             val rp = Paint(Paint.ANTI_ALIAS_FLAG)
             for (k in 0 until 260) {
                 val dark = rnd.nextBoolean()
-                rp.color = if (dark) Color.argb(10 + rnd.nextInt(12), 150, 110, 60)
-                           else Color.argb(9 + rnd.nextInt(10), 250, 232, 190)
+                rp.color = if (dark) Color.argb(16 + rnd.nextInt(18), 148, 106, 58)
+                           else Color.argb(13 + rnd.nextInt(15), 252, 234, 192)
                 val pw = (28f + rnd.nextFloat() * 140f) * scale   // 30-170 m
                 val ph = pw * (0.25f + rnd.nextFloat() * 0.5f)
                 val px = rnd.nextFloat() * res; val pz = rnd.nextFloat() * res
