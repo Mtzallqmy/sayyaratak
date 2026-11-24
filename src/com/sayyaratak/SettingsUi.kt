@@ -12,12 +12,14 @@ class SettingsUi(val act: Activity, val cb: Callbacks) {
         fun onQuality(q: Int)
         fun onAudio(on: Boolean)
         fun onDefaultCamera(cam: Int)
+        fun onSteerWheel(on: Boolean)
         fun onResetProgress()
         fun onCloseSettings()
     }
 
     lateinit var panel: LinearLayout
     private var quality = 1
+    private var steerWheel = false
     private var audio = true
     private var camera = 0
 
@@ -60,9 +62,20 @@ class SettingsUi(val act: Activity, val cb: Callbacks) {
             "خامات الأرض والطرق والواجهات: ambientCG (CC0)\n" +
             "الخط: Tajawal - Google Fonts (OFL)\n" +
             "أدوات التحويل: gltf-transform (Apache-2.0)\n" +
-            "التفاصيل الكاملة في ملف LICENSES.txt داخل اللعبة",
+            "فيزياء القيادة والصوت: خوارزميات من enginesound و Godot-Easy-Vehicle-Physics و Godot-Advanced-Vehicle و vehicle-physics و RallyCraft و road-generator و opencity (MIT)\n" +
+            "التفاصيل الكاملة في THIRD_PARTY.md",
             11f, Color.argb(190, 255, 255, 255))
         panel.addView(credits)
+
+        panel.addView(UiKit.label(act, "التوجيه", 14f, Color.argb(220, 255, 255, 255)))
+        val swBtn = UiKit.btn(act, "المقود: " + if (steerWheel) "سحب" else "أزرار", 14f)
+        swBtn.setOnClickListener {
+            steerWheel = !steerWheel
+            swBtn.text = "المقود: " + if (steerWheel) "سحب" else "أزرار"
+            cb.onSteerWheel(steerWheel)
+        }
+        panel.addView(swBtn, UiKit.margins(UiKit.vlp(-1, UiKit.dp(act, 44f)), 0, 4 * d, 0, 4 * d))
+        addSpacer(panel, 6)
 
         panel.addView(UiKit.label(act, "الكاميرا الافتراضية", 14f, Color.argb(220, 255, 255, 255)))
         val cr = UiKit.row(act)
@@ -88,6 +101,7 @@ class SettingsUi(val act: Activity, val cb: Callbacks) {
     }
 
     fun sync(q: Int, a: Boolean, c: Int) { quality = q; audio = a; camera = c }
+    fun syncWheel(on: Boolean) { steerWheel = on }
 
     private fun addSpacer(l: LinearLayout, dpv: Int) {
         val v = View(act)

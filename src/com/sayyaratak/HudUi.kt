@@ -31,6 +31,10 @@ class HudUi(val act: Activity, val cb: Callbacks) {
     private var brake = 0f
     private var steerL = false
     private var steerR = false
+    private var wheelMode = false
+    private var wheelSteer = 0f
+    private lateinit var wheelView: SteerWheelView
+    private lateinit var steerRow: android.widget.LinearLayout
     private var handbrake = false
 
     val districtNames = arrayOf("الساحة المركزية", "تعز", "صنعاء", "إب", "عدن", "حضرموت", "الصحراء المفتوحة")
@@ -99,8 +103,8 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         trp.setMargins(0, 12 * d, 22 * d, 0)
         panel.addView(topR, trp)
 
-        // steering bottom-left
-        val steerRow = UiKit.row(act)
+        // steering bottom-left (buttons, or drag wheel when wheelMode)
+        steerRow = UiKit.row(act)
         val lb = holdButton("◀", 30f) { down -> steerL = down; sendInput() }
         val rb = holdButton("▶", 30f) { down -> steerR = down; sendInput() }
         steerRow.addView(lb, UiKit.margins(UiKit.vlp(UiKit.dp(act, 92f), UiKit.dp(act, 92f)), 8 * d, 0, 8 * d, 0))
@@ -108,6 +112,12 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         val srp = UiKit.lp(-2, -2, Gravity.BOTTOM or Gravity.LEFT)
         srp.setMargins(22 * d, 0, 0, 22 * d)
         panel.addView(steerRow, srp)
+        wheelView = SteerWheelView(act)
+        wheelView.onChange = { v -> wheelSteer = v; sendInput() }
+        wheelView.visibility = View.GONE
+        val wvp = UiKit.lp(UiKit.dp(act, 170f), UiKit.dp(act, 170f), Gravity.BOTTOM or Gravity.LEFT)
+        wvp.setMargins(20 * d, 0, 0, 18 * d)
+        panel.addView(wheelView, wvp)
 
         // pedals bottom-right
         val pedalCol = UiKit.column(act)
@@ -156,8 +166,14 @@ class HudUi(val act: Activity, val cb: Callbacks) {
         return b
     }
 
+    fun setSteerWheel(on: Boolean) {
+        wheelMode = on
+        if (::wheelView.isInitialized) wheelView.visibility = if (on) View.VISIBLE else View.GONE
+        if (::steerRow.isInitialized) steerRow.visibility = if (on) View.GONE else View.VISIBLE
+    }
+
     private fun sendInput() {
-        val steer = (if (steerL) -1f else 0f) + (if (steerR) 1f else 0f)
+        val steer = if (wheelMode) wheelSteer else (if (steerL) -1f else 0f) + (if (steerR) 1f else 0f)
         cb.onInput(throttle, brake, steer, handbrake)
     }
 

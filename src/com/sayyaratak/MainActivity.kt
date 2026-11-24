@@ -118,6 +118,7 @@ class MainActivity : Activity() {
             override fun onExitToMenu() { showMenu() }
         })
         hud.build(root)
+        hud.setSteerWheel(prefs.getBoolean("steerwheel", false))
 
         menu = MenuUi(this, object : MenuUi.Callbacks {
             override fun onStartDrive(district: Int) { startDrive(district) }
@@ -209,6 +210,10 @@ class MainActivity : Activity() {
             override fun onDefaultCamera(cam: Int) {
                 prefs.edit().putInt("camera", cam).apply()
             }
+            override fun onSteerWheel(on: Boolean) {
+                prefs.edit().putBoolean("steerwheel", on).apply()
+                hud.setSteerWheel(on)
+            }
             override fun onResetProgress() {
                 prefs.edit().putInt("stars", 0).putInt("best", 0).putInt("cbest", 0).apply()
                 refreshBest()
@@ -255,6 +260,7 @@ class MainActivity : Activity() {
         val r = prefs.getFloat("pr", 0.62f); val g = prefs.getFloat("pg", 0.05f); val b = prefs.getFloat("pb", 0.06f)
         workshop.syncState(prefs.getBoolean("spoiler", true), prefs.getBoolean("neon", false), prefs.getBoolean("tint", true))
         settings.sync(prefs.getInt("quality", 1), prefs.getBoolean("audio", true), prefs.getInt("camera", 0))
+        settings.syncWheel(prefs.getBoolean("steerwheel", false))
         glView.queueEvent {
             NativeBridge.nativeSetPaint(r, g, b)
             NativeBridge.nativeSetWheels(prefs.getInt("wheels", 0))
