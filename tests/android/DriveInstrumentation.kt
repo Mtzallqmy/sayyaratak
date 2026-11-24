@@ -3,6 +3,7 @@ package com.sayyaratak
 import android.app.Activity
 import android.app.Instrumentation
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Rect
 import android.opengl.GLSurfaceView
 import android.os.Bundle
@@ -11,6 +12,7 @@ import android.os.ParcelFileDescriptor
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.View
+import java.io.File
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -32,6 +34,7 @@ class DriveInstrumentation : Instrumentation() {
             runDrive()
             finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "\nDRIVE_OK\n") })
         } catch (failure: Throwable) {
+            runCatching { uiAutomation.takeScreenshot()?.let { saveScene(it); it.recycle() } }
             finish(Activity.RESULT_CANCELED, Bundle().apply {
                 putString("stream", "\n" + android.util.Log.getStackTraceString(failure))
             })
@@ -121,8 +124,12 @@ class DriveInstrumentation : Instrumentation() {
         check(resumed.state[NativeBridge.ST_THROTTLE_INPUT] == 0f &&
             resumed.state[NativeBridge.ST_BRAKE_INPUT] == 0f &&
             resumed.state[NativeBridge.ST_STEER_INPUT] == 0f) { "Input stuck after resume" }
-        val image = checkNotNull(uiAutomation.takeScreenshot()) { "Could not capture resumed scene" }
+        val screenshot = checkNotNull(uiAutomation.takeScreenshot()) { "Could not capture resumed scene" }
+        val image = if (screenshot.config == Bitmap.Config.HARDWARE) {
+            checkNotNull(screenshot.copy(Bitmap.Config.ARGB_8888, false)).also { screenshot.recycle() }
+        } else screenshot
         try {
+            saveScene(image)
             val colors = mutableSetOf<Int>()
             for (row in 2..5) {
                 for (column in 2..8) {
@@ -143,6 +150,12 @@ class DriveInstrumentation : Instrumentation() {
         inject(MotionEvent.ACTION_UP, resumedGas)
         android.util.Log.i("sayya", "Drive smoke passed: speed=${driving.state[NativeBridge.ST_SPEED]} km/h, " +
             "distance=${moved(start, driving)} m, EGL generation=${resumed.generation}")
+    }
+
+    private fun saveScene(image: Bitmap) {
+        File(targetContext.cacheDir, "drive.png").outputStream().use {
+            check(image.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
     }
 
     private fun shell(command: String) {
