@@ -67,6 +67,22 @@ object WorldPainter {
             val s = 1f + rnd.nextFloat() * 2.5f
             c.drawRect(rnd.nextFloat() * res, rnd.nextFloat() * res, rnd.nextFloat() * res + s, rnd.nextFloat() * res + s, p)
         }
+        // large-scale desert patchiness: soft dune streaks and worn patches (60-300m)
+        run {
+            val rp = Paint(Paint.ANTI_ALIAS_FLAG)
+            for (k in 0 until 260) {
+                val dark = rnd.nextBoolean()
+                rp.color = if (dark) Color.argb(10 + rnd.nextInt(12), 150, 110, 60)
+                           else Color.argb(9 + rnd.nextInt(10), 250, 232, 190)
+                val pw = (28f + rnd.nextFloat() * 140f) * scale   // 30-170 m
+                val ph = pw * (0.25f + rnd.nextFloat() * 0.5f)
+                val px = rnd.nextFloat() * res; val pz = rnd.nextFloat() * res
+                c.save()
+                c.rotate(rnd.nextFloat() * 40f - 20f, px, pz)   // loose prevailing-wind alignment
+                c.drawOval(px - pw / 2, pz - ph / 2, px + pw / 2, pz + ph / 2, rp)
+                c.restore()
+            }
+        }
         // district ground tints
         for (t in w.tints) {
             val col = when (t[4].toInt()) {
