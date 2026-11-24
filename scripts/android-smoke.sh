@@ -5,8 +5,9 @@ apk=${1:?Expected path to the instrumented APK}
 mkdir -p shots
 
 capture() {
-    adb exec-out run-as com.sayyaratak cat cache/drive.png > shots/driving.png || true
-    if [[ ! -s shots/driving.png ]]; then
+    if adb shell run-as com.sayyaratak test -s cache/drive.png >/dev/null 2>&1; then
+        adb exec-out run-as com.sayyaratak cat cache/drive.png > shots/driving.png || true
+    else
         adb exec-out screencap -p > shots/driving.png || true
     fi
     adb logcat -d -v threadtime > shots/logcat.txt || true
@@ -30,7 +31,7 @@ adb shell svc data disable
 adb install -r "$apk"
 adb shell pm clear com.sayyaratak | tee shots/app-data.txt
 grep -Fxq Success shots/app-data.txt
-adb logcat -c
+adb logcat -c || echo "Previous device logs could not be cleared"
 timeout 180 adb shell am instrument -w com.sayyaratak/.DriveInstrumentation \
     | tr -d '\r' | tee shots/instrumentation.txt
 grep -Fxq DRIVE_OK shots/instrumentation.txt

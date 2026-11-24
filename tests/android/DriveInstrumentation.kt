@@ -53,7 +53,6 @@ class DriveInstrumentation : Instrumentation() {
         val wheelBounds = bounds("steering_wheel")
         val wheel = wheelBounds.center()
         val turned = Point(wheel.x + wheelBounds.width() * 0.24f, wheel.y)
-        val brake = bounds("brake").center()
 
         downTime = SystemClock.uptimeMillis()
         inject(MotionEvent.ACTION_DOWN, gas)
@@ -75,9 +74,13 @@ class DriveInstrumentation : Instrumentation() {
                 it.state[NativeBridge.ST_SPEED] >= 14f
         }
         inject(MotionEvent.ACTION_UP, gas)
+        await("throttle released") { it.state[NativeBridge.ST_THROTTLE_INPUT] == 0f }
 
+        val brake = bounds("brake").center()
+        android.util.Log.i("sayya", "Brake tap at $brake, throttle at $gas")
         downTime = SystemClock.uptimeMillis()
         inject(MotionEvent.ACTION_DOWN, brake)
+        await("brake pedal receives touch") { it.state[NativeBridge.ST_BRAKE_INPUT] == 1f }
         await("braking lowers speed to a stop") {
             it.state[NativeBridge.ST_BRAKE_INPUT] == 1f && it.state[NativeBridge.ST_THROTTLE_INPUT] == 0f &&
                 it.state[NativeBridge.ST_SPEED] < 1.5f &&
@@ -100,10 +103,14 @@ class DriveInstrumentation : Instrumentation() {
             dx * sin(heading) + dz * cos(heading) <= -1f
         }
         inject(MotionEvent.ACTION_UP, gas)
+        await("reverse throttle released") { it.state[NativeBridge.ST_THROTTLE_INPUT] == 0f }
+        val reverseBrake = bounds("brake").center()
         downTime = SystemClock.uptimeMillis()
-        inject(MotionEvent.ACTION_DOWN, brake)
-        await("reverse braking stops the vehicle") { it.state[NativeBridge.ST_SPEED] < 0.5f }
-        inject(MotionEvent.ACTION_UP, brake)
+        inject(MotionEvent.ACTION_DOWN, reverseBrake)
+        await("reverse braking stops the vehicle") {
+            it.state[NativeBridge.ST_BRAKE_INPUT] == 1f && it.state[NativeBridge.ST_SPEED] < 0.5f
+        }
+        inject(MotionEvent.ACTION_UP, reverseBrake)
         tap(gear)
         val beforePause = await("forward gear restored") {
             it.state[NativeBridge.ST_REVERSE] == 0f && it.state[NativeBridge.ST_BRAKE_INPUT] == 0f
