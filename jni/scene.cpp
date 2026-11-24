@@ -111,7 +111,7 @@ void buildScene() {
                 V3 n = vnorm(vscale(pt((e0+e1)/2,(a0+a1)/2), -1.f));
                 // equirect UVs: u = azimuth, v = elevation band (pow remap pulls blue into view)
                 float u0=a0/6.2831853f, u1=a1/6.2831853f;
-                float v0=1.f-powf(e0/1.45f, 0.55f), v1=1.f-powf(e1/1.45f, 0.55f);
+                float v0=1.f-powf(e0/1.45f, 0.40f), v1=1.f-powf(e1/1.45f, 0.40f);
                 vert(m, p00, n, u0,v0, c0[0],c0[1],c0[2],1);
                 vert(m, p10, n, u0,v1, c1[0],c1[1],c1[2],1);
                 vert(m, p11, n, u1,v1, c1[0],c1[1],c1[2],1);
