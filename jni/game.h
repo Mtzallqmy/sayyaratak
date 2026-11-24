@@ -2,6 +2,8 @@
 #pragma once
 #include "render.h"
 #include "world.h"
+
+static const V3 SUN = {0.45f, 0.55f, -0.35f};
 #include "carmodel.h"
 #include "car.h"
 
@@ -11,7 +13,7 @@ struct Game {
     World world;
     // GL
     Program prog;
-    GLMesh ground, farRing, sky, mountains, canyon, roadMesh, props;
+    GLMesh ground, farRing, sky, mountains, canyon, roadMesh, props, bldgShadow;
     GLMesh bldgMesh[4];
     GLMesh palms;
     GLMesh starsMesh;

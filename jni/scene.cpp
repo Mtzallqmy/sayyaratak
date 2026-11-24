@@ -213,6 +213,22 @@ void buildScene() {
         }
         for (int i = 0; i < 4; i++) G.bldgMesh[i].upload(mm[i]);
     }
+    // baked building shadows: soft ellipses offset opposite the sun
+    {
+        MeshData m;
+        float sxl = -SUN.x / SUN.y, szl = -SUN.z / SUN.y;
+        for (auto& b : G.world.bldgs) {
+            float off = b.h * 0.30f;
+            float qx = b.x + sxl * off, qz = b.z + szl * off;
+            float ex = b.w * 0.62f + off * 0.45f, ez = b.d * 0.62f + off * 0.45f;
+            float c[4] = {0.f, 0.f, 0.f, 0.34f};
+            float uv[12] = {0,0, 1,0, 1,1, 0,0, 1,1, 0,1};
+            V3 n = v3(0,1,0);
+            tri(m, v3(qx-ex, 0.04f, qz-ez), v3(qx+ex, 0.04f, qz-ez), v3(qx+ex, 0.04f, qz+ez), n, c, uv);
+            tri(m, v3(qx-ex, 0.04f, qz-ez), v3(qx+ex, 0.04f, qz+ez), v3(qx-ex, 0.04f, qz+ez), n, c, uv+6);
+        }
+        G.bldgShadow.upload(m);
+    }
     // streetlight props along road edges (visual + small collider)
     {
         MeshData m;

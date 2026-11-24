@@ -12,7 +12,7 @@ Game G;
 GLuint* texIds() { static GLuint t[12] = {0}; return t; }
 std::string& glErrorLog() { static std::string e; return e; }
 
-static const V3 SUN = {0.45f, 0.55f, -0.35f};
+
 
 // ---------- physics ----------
 void spawnDust(int n, float r, float g, float b);
@@ -406,6 +406,9 @@ void drawFrame(float dt) {
     // mountains + canyon
     drawMesh(G.mountains, I, vp, 1,1,1,1, 0, 0, 0, 0.05f, 8, 0, 0, 0);
     drawMesh(G.canyon, I, vp, 1,1,1,1, 0, 0, 0, 0.1f, 10, 0, 0, 0);
+    { glEnable(GL_BLEND); glDepthMask(false);
+    drawMesh(G.bldgShadow, I, vp, 1,1,1,1, 6, 1, 0, 0, 1, 0, 0, 0);
+    glDepthMask(true); glDisable(GL_BLEND); }
     drawMesh(G.props, I, vp, 1,1,1,1, 0, 0, 0, 0.3f, 24, 0, 0, 0);
     // buildings
     for (int t = 0; t < 4; t++)
