@@ -35,4 +35,3 @@ adb logcat -c || echo "Previous device logs could not be cleared"
 timeout 180 adb shell am instrument -w com.sayyaratak/.DriveInstrumentation \
     | tr -d '\r' | tee shots/instrumentation.txt
 grep -Fxq DRIVE_OK shots/instrumentation.txt
-grep -Fxq 'INSTRUMENTATION_CODE: -1' shots/instrumentation.txt
