@@ -131,7 +131,7 @@ class DriveInstrumentation : Instrumentation() {
         check(resumed.state[NativeBridge.ST_THROTTLE_INPUT] == 0f &&
             resumed.state[NativeBridge.ST_BRAKE_INPUT] == 0f &&
             resumed.state[NativeBridge.ST_STEER_INPUT] == 0f) { "Input stuck after resume" }
-        val screenshot = checkNotNull(uiAutomation.takeScreenshot()) { "Could not capture resumed scene" }
+        val screenshot = captureResumedScene()
         val image = if (screenshot.config == Bitmap.Config.HARDWARE) {
             checkNotNull(screenshot.copy(Bitmap.Config.ARGB_8888, false)).also { screenshot.recycle() }
         } else screenshot
@@ -157,6 +157,17 @@ class DriveInstrumentation : Instrumentation() {
         inject(MotionEvent.ACTION_UP, resumedGas)
         android.util.Log.i("sayya", "Drive smoke passed: speed=${driving.state[NativeBridge.ST_SPEED]} km/h, " +
             "distance=${moved(start, driving)} m, EGL generation=${resumed.generation}")
+    }
+
+    private fun captureResumedScene(): Bitmap {
+        // A frame can be ready before Android finishes the display rotation and focus transition.
+        repeat(20) {
+            var focused = false
+            runOnMainSync { focused = activity.hasWindowFocus() }
+            if (focused) uiAutomation.takeScreenshot()?.let { return it }
+            SystemClock.sleep(250)
+        }
+        error("Could not capture resumed scene after the activity regained focus")
     }
 
     private fun saveScene(image: Bitmap) {
