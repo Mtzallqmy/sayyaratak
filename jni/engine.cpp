@@ -212,6 +212,9 @@ void stepPhysics(float dt) {
         float dx = G.pos.x - s.x, dz = G.pos.z - s.z;
         if (dx * dx + dz * dz < 9.f) {
             G.starsMask[i] = 1; G.stars++;
+            // RacingGame (MIT) bonus flow: pickups give a resource reward
+            G.fuel = fminf(100.f, G.fuel + 6.f);
+            G.damage = fmaxf(0.f, G.damage - 4.f);
             audioOneshot(1);
             for (int k = 0; k < 14; k++) spawnBurst(s.x, 1.6f, s.z, 1.f, 0.85f, 0.3f);
         }
