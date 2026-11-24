@@ -60,6 +60,21 @@ void buildScene() {
             V3 d = v3(rd.x2 - px*hw, 0.05f, rd.z2 - pz*hw);
             float uv[12] = {0,w1, 1,w1, 1,w2, 0,w1, 1,w2, 0,w2};
             tri(rm, a,b,c, n, rc, uv); tri(rm, a,c,d, n, rc, uv+6);
+            // raised curb shoulders (TheDuckCow/godot-road-generator gutter idea, MIT):
+            // a low lighter lip each side of the asphalt, catching the sun
+            float gw = 0.55f, gy = 0.14f;
+            float gc[4] = {0.78f, 0.76f, 0.72f, 1};
+            float guv[12] = {0,w1, 0.06f,w1, 0.06f,w2, 0,w1, 0.06f,w2, 0,w2};
+            V3 s1a = v3(rd.x1 - px*(hw+gw), gy, rd.z1 - pz*(hw+gw));
+            V3 s1b = v3(rd.x1 - px*hw, gy, rd.z1 - pz*hw);
+            V3 s1c = v3(rd.x2 - px*hw, gy, rd.z2 - pz*hw);
+            V3 s1d = v3(rd.x2 - px*(hw+gw), gy, rd.z2 - pz*(hw+gw));
+            tri(rm, s1a,s1b,s1c, n, gc, guv); tri(rm, s1a,s1c,s1d, n, gc, guv+6);
+            V3 s2a = v3(rd.x1 + px*hw, gy, rd.z1 + pz*hw);
+            V3 s2b = v3(rd.x1 + px*(hw+gw), gy, rd.z1 + pz*(hw+gw));
+            V3 s2c = v3(rd.x2 + px*(hw+gw), gy, rd.z2 + pz*(hw+gw));
+            V3 s2d = v3(rd.x2 + px*hw, gy, rd.z2 + pz*hw);
+            tri(rm, s2a,s2b,s2c, n, gc, guv); tri(rm, s2a,s2c,s2d, n, gc, guv+6);
         }
         G.roadMesh.upload(rm);
     }
@@ -197,6 +212,33 @@ void buildScene() {
             box(m, b.x, b.h + 0.3f, b.z, b.w + 0.4f, 0.6f, b.d + 0.4f, dk, 1, 1);
         }
         for (int i = 0; i < 4; i++) G.bldgMesh[i].upload(mm[i]);
+    }
+    // streetlight props along road edges (visual + small collider)
+    {
+        MeshData m;
+        float pole[4] = {0.24f, 0.25f, 0.27f, 1};
+        float lamp[4] = {1.0f, 0.93f, 0.72f, 1};
+        for (auto& rd : G.world.roads) {
+            float dx = rd.x2 - rd.x1, dz = rd.z2 - rd.z1;
+            float len = sqrtf(dx*dx + dz*dz);
+            if (len < 40.f) continue;
+            float ux = dx / len, uz = dz / len;
+            float nx = -uz, nz = ux;
+            float off = rd.w * 0.5f + 1.6f;
+            int side = 1;
+            for (float t = 22; t < len - 12; t += 48) {
+                float bx = rd.x1 + ux * t + nx * off * side;
+                float bz = rd.z1 + uz * t + nz * off * side;
+                side = -side;
+                box(m, bx, 3.0f, bz, 0.18f, 6.0f, 0.18f, pole);            // pole
+                box(m, bx - nx * side * 1.0f, 6.0f, bz - nz * side * 1.0f,
+                    0.14f + fabsf(nx) * 1.8f, 0.14f, 0.14f + fabsf(nz) * 1.8f, pole); // arm
+                box(m, bx - nx * side * 1.9f, 5.9f, bz - nz * side * 1.9f,
+                    0.7f + fabsf(nx) * 0.5f, 0.18f, 0.7f + fabsf(nz) * 0.5f, lamp);   // head
+                G.world.colliders.push_back({bx, bz, 0.3f, 0.3f});
+            }
+        }
+        G.props.upload(m);
     }
     // palms: trunk cylinder + 2 crossed frond quads (textured, alpha test)
     {

@@ -184,19 +184,24 @@ struct World {
             }
             return;
         }
+        // opencity (MIT) ideas: downtown height falloff toward the district
+        // center, and the occasional empty lot.
         for (int gx = -1; gx <= 1; gx++) for (int gz = -1; gz <= 1; gz++) {
             // block center between streets
             float bx = cx + gx * 140.f + 70.f * (gx == 1 ? 1 : (gx == -1 ? -1 : 0)) * 0.0f;
             float bz = cz + gz * 140.f;
+            if (frand() < 0.10f) continue; // empty lot
+            float ddx = bx - cx, ddz = bz - cz;
+            float downtown = 1.f - fminf(1.f, sqrtf(ddx*ddx + ddz*ddz) / 230.f);
             int n = 1 + (int)(frand() * 2.2f);
             for (int k = 0; k < n; k++) {
                 float x = bx + range(-44, 44), z = bz + range(-44, 44);
                 if (onRoad(x, z, 16.f)) continue;
                 float w, d, h; int tex;
-                if (style == 2) { w = range(10, 15); d = range(10, 15); h = range(18, 36); tex = 1; }
-                else if (style == 4) { w = range(12, 22); d = range(12, 22); h = range(8, 18); tex = 3; }
-                else if (style == 3) { w = range(10, 18); d = range(10, 18); h = range(6, 12); tex = 0; }
-                else { w = range(12, 24); d = range(12, 24); h = range(10, 26); tex = 0; }
+                if (style == 2) { w = range(10, 15); d = range(10, 15); h = range(18, 36) + downtown * range(6, 20); tex = 1; }
+                else if (style == 4) { w = range(12, 22); d = range(12, 22); h = range(8, 18) + downtown * range(3, 8); tex = 3; }
+                else if (style == 3) { w = range(10, 18); d = range(10, 18); h = range(6, 12) + downtown * range(2, 5); tex = 0; }
+                else { w = range(12, 24); d = range(12, 24); h = range(10, 26) + downtown * range(5, 14); tex = 0; }
                 bldgs.push_back({x, z, w, d, h, tex});
                 colliders.push_back({x, z, w / 2, d / 2});
             }

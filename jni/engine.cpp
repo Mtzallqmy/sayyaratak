@@ -116,9 +116,13 @@ void stepPhysics(float dt) {
     float yaw = speed / 2.7f * tanf(G.steer);
     G.heading += yaw * dt;
 
-    // lateral grip
-    float grip = G.inHandbrake ? 2.0f : (offroad ? 4.2f : 7.5f) * (G.driveMode >= 1 ? 1.08f : 1.f);
-    lat *= fmaxf(0.f, 1.f - grip * dt);
+    // lateral grip: exponential velocity-alignment decay (form ported from
+    // stranmous/RallyCraft, MIT: rate via 1-exp(-r*dt)) with kinetic-grip falloff
+    // once sliding (dicnunz/vehicle-physics, MIT: sliding grip = 0.84x past slip 0.35)
+    float slipNow = fabsf(lat) / (fabsf(speed) + 2.f);
+    float kin = slipNow > 0.35f ? 0.84f : 1.f;
+    float grip = (G.inHandbrake ? 2.0f : (offroad ? 4.2f : 7.5f) * (G.driveMode >= 1 ? 1.08f : 1.f)) * kin;
+    lat *= expf(-grip * dt);
 
     // recompose velocity in (possibly new) heading frame
     fwdX = sinf(G.heading); fwdZ = cosf(G.heading);
@@ -402,6 +406,7 @@ void drawFrame(float dt) {
     // mountains + canyon
     drawMesh(G.mountains, I, vp, 1,1,1,1, 0, 0, 0, 0.05f, 8, 0, 0, 0);
     drawMesh(G.canyon, I, vp, 1,1,1,1, 0, 0, 0, 0.1f, 10, 0, 0, 0);
+    drawMesh(G.props, I, vp, 1,1,1,1, 0, 0, 0, 0.3f, 24, 0, 0, 0);
     // buildings
     for (int t = 0; t < 4; t++)
         drawMesh(G.bldgMesh[t], I, vp, 1,1,1,1, 1 + t, 1, 0, 0.10f, 14, 0, 0, 0);

@@ -11,7 +11,7 @@ struct Game {
     World world;
     // GL
     Program prog;
-    GLMesh ground, farRing, sky, mountains, canyon, roadMesh;
+    GLMesh ground, farRing, sky, mountains, canyon, roadMesh, props;
     GLMesh bldgMesh[4];
     GLMesh palms;
     GLMesh starsMesh;
